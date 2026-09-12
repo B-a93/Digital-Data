@@ -1,0 +1,42 @@
+// Optional local integration check: requires Playwright and its Chromium browser.
+import {createRequire} from 'node:module';
+const {chromium}=createRequire(import.meta.url)('playwright');
+import assert from 'node:assert/strict';
+const browser=await chromium.launch({headless:true});
+const page=await browser.newPage({viewport:{width:1440,height:1000}});
+const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',dialog=>dialog.accept());
+try {
+ await page.goto('http://localhost:3000');
+ await page.getByRole('heading',{name:'A clearer view of your school'}).waitFor();
+ await page.getByRole('link',{name:'Students',exact:true}).click();
+ await page.getByLabel('Student display name').fill('Awa Test Example');
+ await page.getByRole('button',{name:'Add student',exact:true}).click();
+ await page.getByText('Awa Test Example',{exact:true}).waitFor();
+ await page.getByRole('link',{name:'Attendance',exact:true}).click();
+ await page.getByRole('button',{name:'Mark class present'}).click();
+ await page.getByRole('button',{name:'Save attendance'}).click();
+ await page.getByText('Saved in browser · class complete',{exact:true}).waitFor();
+ await page.getByRole('link',{name:'Fees & payments',exact:true}).click();
+ await page.getByLabel('Student',{exact:true}).selectOption('s3');
+ await page.getByLabel('Amount in dalasi',{exact:true}).fill('1500');
+ await page.getByRole('button',{name:'Record payment',exact:true}).click();
+ await page.locator('#receipt').getByText(/DEMO-R0003/).waitFor();
+ await page.getByRole('link',{name:'Results',exact:true}).click();
+ for(const input of await page.locator('.mark-input').all())await input.fill('75');
+ await page.getByRole('button',{name:'Approve & publish demo results'}).click();
+ await page.getByRole('heading',{name:'Published snapshot · version 1'}).waitFor();
+ await page.getByRole('link',{name:'Reports',exact:true}).click();
+ const downloadPromise=page.waitForEvent('download');
+ await page.locator('[data-report="results"]').click();
+ assert.equal((await downloadPromise).suggestedFilename(),'demo-results.csv');
+ await page.reload();
+ await page.getByRole('link',{name:'Students',exact:true}).click();
+ await page.getByText('Awa Test Example',{exact:true}).waitFor();
+ await page.getByRole('link',{name:'Overview',exact:true}).click();
+ await page.screenshot({path:'/workspace/scratch/808489adfe75/school-desktop.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ await page.screenshot({path:'/workspace/scratch/808489adfe75/school-mobile.png',fullPage:true});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
+ assert.deepEqual(errors,[]);
+ console.log('Browser smoke passed: register, attendance, payment, publish, export, persistence and mobile layout.');
+} finally {await browser.close();}

@@ -1,0 +1,5 @@
+{
+  "name": "digital-data", "private": true, "type": "module",
+  "scripts": {"dev": "node apps/school-web/server.mjs", "start": "node apps/school-web/server.mjs", "test": "node --test apps/school-web/tests/*.test.mjs"},
+  "engines": {"node": ">=20"}
+}
