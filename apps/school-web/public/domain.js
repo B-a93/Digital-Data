@@ -1,7 +1,7 @@
 export const classes = ['Grade 7 · A','Grade 7 · B','Grade 8 · A','Grade 9 · A'];
 export function seed() {
   const names = ['Awa Demo','Lamin Sample','Fatou Example','Omar Demo','Mariama Sample','Ebrima Example','Isatou Demo','Musa Sample','Binta Example','Alieu Demo','Kaddy Sample','Sanna Example'];
-  return {version:1, settings:{name:'Example Academy',term:'Term 1 · 2026/27',pass:50}, students:names.map((name,i)=>({id:`s${i+1}`,admission:`DEMO-${String(i+1).padStart(4,'0')}`,name, class:classes[i%4]})), attendance:{}, charges:names.map((_,i)=>({id:`c${i+1}`,studentId:`s${i+1}`,amount:150000,label:'Term tuition'})), payments:[{id:'p1',operation:'seed-1',studentId:'s1',amount:150000,reference:'DEMO-R0001',date:'2026-09-10'},{id:'p2',operation:'seed-2',studentId:'s2',amount:50000,reference:'DEMO-R0002',date:'2026-09-10'}],marks:{},published:[]};
+  return {version:1, settings:{name:'Example Academy',term:'Term 1 · 2026/27',pass:50,classes:[...classes],feeTypes:['Term tuition']}, students:names.map((name,i)=>({id:`s${i+1}`,admission:`DEMO-${String(i+1).padStart(4,'0')}`,name, class:classes[i%4]})), attendance:{}, charges:names.map((_,i)=>({id:`c${i+1}`,studentId:`s${i+1}`,amount:150000,label:'Term tuition'})), payments:[{id:'p1',operation:'seed-1',studentId:'s1',amount:150000,reference:'DEMO-R0001',date:'2026-09-10'},{id:'p2',operation:'seed-2',studentId:'s2',amount:50000,reference:'DEMO-R0002',date:'2026-09-10'}],marks:{},published:[]};
 }
 export function cents(value) {
   if (!/^\d+(\.\d{1,2})?$/.test(String(value))) throw new Error('Enter a positive amount with at most two decimal places.');
