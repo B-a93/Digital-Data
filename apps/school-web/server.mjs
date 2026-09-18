@@ -303,6 +303,131 @@ const server = http.createServer(async (req, res) => {
       json(res, 200, { student: updated });
       return;
     }
+    if (pathname === "/api/school/finance") {
+      const context = await requireSchoolContext(req);
+      if (req.method !== "GET") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const [feeTypes, charges, payments] = await Promise.all([
+        query(
+          `SELECT id,name FROM fee_types WHERE school_id=$1 ORDER BY name`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT fc.id,fc.student_id,fc.description,fc.amount_bututs,fc.created_at
+           FROM fee_charges fc WHERE fc.school_id=$1 ORDER BY fc.created_at`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT p.id,p.student_id,p.amount_bututs,p.receipt_number,p.paid_on,p.created_at
+           FROM payments p WHERE p.school_id=$1 ORDER BY p.created_at`,
+          [context.school_id],
+        ),
+      ]);
+      json(res, 200, {
+        feeTypes: feeTypes.rows,
+        charges: charges.rows,
+        payments: payments.rows,
+      });
+      return;
+    }
+    if (pathname === "/api/school/charges") {
+      const context = await requireSchoolContext(req);
+      if (req.method !== "POST") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const data = await readJsonBody(req),
+        studentId = String(data.studentId || ""),
+        description = String(data.description || "").trim(),
+        amount = Number(data.amountBututs);
+      if (
+        !/^[0-9a-f-]{36}$/.test(studentId) ||
+        !description ||
+        !Number.isSafeInteger(amount) ||
+        amount <= 0
+      ) {
+        json(res, 400, { error: "Enter a valid charge." });
+        return;
+      }
+      const charge = await transaction(async (client) => {
+        const student = (
+          await client.query(
+            `SELECT id FROM students WHERE id=$1 AND school_id=$2`,
+            [studentId, context.school_id],
+          )
+        ).rows[0];
+        if (!student)
+          throw Object.assign(new Error("Student not found."), { status: 404 });
+        const feeType = (
+          await client.query(
+            `INSERT INTO fee_types(school_id,name) VALUES($1,$2)
+             ON CONFLICT(school_id,name) DO UPDATE SET name=EXCLUDED.name RETURNING id`,
+            [context.school_id, description],
+          )
+        ).rows[0];
+        return (
+          await client.query(
+            `INSERT INTO fee_charges(school_id,student_id,fee_type_id,description,amount_bututs)
+             VALUES($1,$2,$3,$4,$5)
+             RETURNING id,student_id,description,amount_bututs,created_at`,
+            [context.school_id, studentId, feeType.id, description, amount],
+          )
+        ).rows[0];
+      });
+      json(res, 201, { charge });
+      return;
+    }
+    if (pathname === "/api/school/payments") {
+      const context = await requireSchoolContext(req);
+      if (req.method !== "POST") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const data = await readJsonBody(req),
+        studentId = String(data.studentId || ""),
+        operationKey = String(data.operationKey || ""),
+        amount = Number(data.amountBututs);
+      if (
+        !/^[0-9a-f-]{36}$/.test(studentId) ||
+        !/^[0-9a-f-]{36}$/.test(operationKey) ||
+        !Number.isSafeInteger(amount) ||
+        amount <= 0
+      ) {
+        json(res, 400, { error: "Enter a valid payment." });
+        return;
+      }
+      const student = (
+        await query(`SELECT id FROM students WHERE id=$1 AND school_id=$2`, [
+          studentId,
+          context.school_id,
+        ])
+      ).rows[0];
+      if (!student) {
+        json(res, 404, { error: "Student not found." });
+        return;
+      }
+      const receiptNumber = `REC-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${randomBytes(3).toString("hex").toUpperCase()}`;
+      const payment = (
+        await query(
+          `INSERT INTO payments(school_id,student_id,amount_bututs,receipt_number,operation_key,paid_on,recorded_by)
+           VALUES($1,$2,$3,$4,$5,CURRENT_DATE,$6)
+           ON CONFLICT(school_id,operation_key) DO UPDATE SET operation_key=EXCLUDED.operation_key
+           RETURNING id,student_id,amount_bututs,receipt_number,paid_on,created_at`,
+          [
+            context.school_id,
+            studentId,
+            amount,
+            receiptNumber,
+            operationKey,
+            context.id,
+          ],
+        )
+      ).rows[0];
+      json(res, 201, { payment });
+      return;
+    }
     if (pathname === "/api/platform/schools") {
       await requirePlatformOwner(req);
       if (req.method === "GET") {
