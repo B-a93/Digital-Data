@@ -274,7 +274,12 @@ const server = http.createServer(async (req, res) => {
     });
     res.end(body);
   } catch (error) {
-    if (new URL(req.url, "http://localhost").pathname.startsWith("/api/")) {
+    const failedPath = new URL(req.url, "http://localhost").pathname;
+    if (failedPath.startsWith("/api/")) {
+      console.error(
+        `[api] ${req.method} ${failedPath} failed:`,
+        error instanceof Error ? error.message : error,
+      );
       json(res, error.status || 500, {
         error: error.status ? error.message : "Request failed",
       });
