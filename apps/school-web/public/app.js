@@ -9,9 +9,7 @@ import {
   publishResults,
 } from "./domain.js";
 import { createAuthClient } from "@neondatabase/auth";
-const auth = createAuthClient(
-  "https://ep-spring-poetry-b2x3am6k.neonauth.c-6.eu-central-1.aws.neon.tech/neondb/auth",
-);
+const auth = createAuthClient(location.origin + "/api/auth");
 const $ = (s) => document.querySelector(s),
   key = "digital-data-school-demo-v1";
 let state;
@@ -423,7 +421,10 @@ function wire() {
         (button.onclick = async () => {
           button.disabled = true;
           try {
-            await platformApi(`/api/platform/schools/${button.dataset.id}/resend-invitation`, { method: "POST" });
+            await platformApi(
+              `/api/platform/schools/${button.dataset.id}/resend-invitation`,
+              { method: "POST" },
+            );
             toast("A new invitation email was sent.");
             await loadSchools();
           } catch (err) {
@@ -885,13 +886,16 @@ function sessionData(result) {
   return result?.data ?? result;
 }
 function showAuthPanel(id) {
-  ["login-panel", "reset-request-panel", "reset-password-panel", "invitation-panel"].forEach(
-    (panel) => {
-      const element = $("#" + panel);
-      element.hidden = panel !== id;
-      element.style.display = panel === id ? "block" : "none";
-    },
-  );
+  [
+    "login-panel",
+    "reset-request-panel",
+    "reset-password-panel",
+    "invitation-panel",
+  ].forEach((panel) => {
+    const element = $("#" + panel);
+    element.hidden = panel !== id;
+    element.style.display = panel === id ? "block" : "none";
+  });
 }
 function showPortal(session) {
   const authScreen = $("#auth-screen"),
@@ -920,7 +924,9 @@ function showLogin(message = "") {
   $("#login-error").textContent = message;
 }
 async function initializeAuth() {
-  const params = new URLSearchParams(location.search), resetToken = params.get("token"), inviteToken = params.get("invite");
+  const params = new URLSearchParams(location.search),
+    resetToken = params.get("token"),
+    inviteToken = params.get("invite");
   if (resetToken) {
     showLogin();
     showAuthPanel("reset-password-panel");
@@ -930,15 +936,21 @@ async function initializeAuth() {
     showLogin();
     showAuthPanel("invitation-panel");
     try {
-      const response=await fetch(`/api/invitations/${encodeURIComponent(inviteToken)}`), data=await response.json();
-      if(!response.ok) throw Error(data.error||"Invitation unavailable.");
-      $("#invitation-title").textContent=`Join ${data.invitation.name}`;
-      $("#invitation-details").textContent="Create your administrator account to activate this school workspace.";
-      $("#invitation-name").value=data.invitation.administrator_name;
-      $("#invitation-email").value=data.invitation.administrator_email;
-      const session=sessionData(await auth.getSession());
-      if(session?.user) await acceptInvitation(inviteToken,session);
-    } catch(err) { $("#invitation-error").textContent=err.message; }
+      const response = await fetch(
+          `/api/invitations/${encodeURIComponent(inviteToken)}`,
+        ),
+        data = await response.json();
+      if (!response.ok) throw Error(data.error || "Invitation unavailable.");
+      $("#invitation-title").textContent = `Join ${data.invitation.name}`;
+      $("#invitation-details").textContent =
+        "Create your administrator account to activate this school workspace.";
+      $("#invitation-name").value = data.invitation.administrator_name;
+      $("#invitation-email").value = data.invitation.administrator_email;
+      const session = sessionData(await auth.getSession());
+      if (session?.user) await acceptInvitation(inviteToken, session);
+    } catch (err) {
+      $("#invitation-error").textContent = err.message;
+    }
     return;
   }
   try {
@@ -966,8 +978,9 @@ $("#login-form").onsubmit = async (e) => {
     if (result?.error) throw Error(result.error.message || "Sign-in failed.");
     const session = sessionData(await auth.getSession());
     if (!session?.user) throw Error("The session could not be created.");
-    const inviteToken=new URLSearchParams(location.search).get("invite");
-    if(inviteToken) await acceptInvitation(inviteToken,session); else showPortal(session);
+    const inviteToken = new URLSearchParams(location.search).get("invite");
+    if (inviteToken) await acceptInvitation(inviteToken, session);
+    else showPortal(session);
   } catch (err) {
     showLogin(
       err?.message || "Unable to sign in. Check your email and password.",
@@ -977,17 +990,60 @@ $("#login-form").onsubmit = async (e) => {
     button.textContent = "Sign in";
   }
 };
-async function acceptInvitation(token,session){
-  const response=await fetch(`/api/invitations/${encodeURIComponent(token)}`,{method:"POST",headers:{Authorization:`Bearer ${session.session.token}`}}),data=await response.json();
-  if(!response.ok)throw Error(data.error||"Unable to activate this school.");
-  history.replaceState({},"",location.pathname);showPortal(session);toast("School portal activated successfully.");
+async function acceptInvitation(token, session) {
+  const response = await fetch(
+      `/api/invitations/${encodeURIComponent(token)}`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.session.token}` },
+      },
+    ),
+    data = await response.json();
+  if (!response.ok)
+    throw Error(data.error || "Unable to activate this school.");
+  history.replaceState({}, "", location.pathname);
+  showPortal(session);
+  toast("School portal activated successfully.");
 }
-$("#invitation-form").onsubmit=async e=>{
-  e.preventDefault();const form=new FormData(e.target),password=String(form.get("password")),confirmation=String(form.get("confirmation")),button=e.target.querySelector(".button"),error=$("#invitation-error"),token=new URLSearchParams(location.search).get("invite");
-  error.textContent="";if(password!==confirmation){error.textContent="The passwords do not match.";return;}button.disabled=true;button.textContent="Creating account…";
-  try{const result=await auth.signUp.email({name:String(form.get("name")).trim(),email:String(form.get("email")).trim(),password});if(result?.error)throw Error(result.error.message||"Account creation failed.");const session=sessionData(await auth.getSession());if(!session?.user)throw Error("Account created. Please sign in to finish activation.");await acceptInvitation(token,session);}catch(err){error.textContent=err?.message||"Unable to activate the school.";}finally{button.disabled=false;button.textContent="Create account and activate";}
+$("#invitation-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const form = new FormData(e.target),
+    password = String(form.get("password")),
+    confirmation = String(form.get("confirmation")),
+    button = e.target.querySelector(".button"),
+    error = $("#invitation-error"),
+    token = new URLSearchParams(location.search).get("invite");
+  error.textContent = "";
+  if (password !== confirmation) {
+    error.textContent = "The passwords do not match.";
+    return;
+  }
+  button.disabled = true;
+  button.textContent = "Creating account…";
+  try {
+    const result = await auth.signUp.email({
+      name: String(form.get("name")).trim(),
+      email: String(form.get("email")).trim(),
+      password,
+    });
+    if (result?.error)
+      throw Error(result.error.message || "Account creation failed.");
+    const session = sessionData(await auth.getSession());
+    if (!session?.user)
+      throw Error("Account created. Please sign in to finish activation.");
+    await acceptInvitation(token, session);
+  } catch (err) {
+    error.textContent = err?.message || "Unable to activate the school.";
+  } finally {
+    button.disabled = false;
+    button.textContent = "Create account and activate";
+  }
 };
-$("#invitation-existing").onclick=()=>{const email=$("#invitation-email").value;showLogin("Sign in to accept your school invitation.");$("#login-email").value=email;};
+$("#invitation-existing").onclick = () => {
+  const email = $("#invitation-email").value;
+  showLogin("Sign in to accept your school invitation.");
+  $("#login-email").value = email;
+};
 $("#sign-out").onclick = async () => {
   try {
     await auth.signOut();
