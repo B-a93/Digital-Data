@@ -231,6 +231,26 @@ async function loadSchoolFinance() {
     date: String(payment.paid_on).slice(0, 10),
   }));
 }
+async function loadSchoolAttendance(
+  date = selectedDate,
+  className = selectedClass,
+) {
+  if (!schoolDataLive || !className) return;
+  const data = await schoolApi(
+      `/api/school/attendance?date=${encodeURIComponent(date)}&class=${encodeURIComponent(className)}`,
+    ),
+    classIds = new Set(
+      state.students
+        .filter((student) => student.class === className)
+        .map((student) => student.id),
+    ),
+    existing = { ...(state.attendance[date]?.marks || {}) };
+  for (const studentId of classIds) delete existing[studentId];
+  state.attendance[date] = {
+    marks: { ...existing, ...data.marks },
+    saved: data.saved,
+  };
+}
 function dashboard() {
   const charges = state.charges.reduce((s, c) => s + c.amount, 0),
     paid = state.payments.reduce((s, p) => s + p.amount, 0),
@@ -335,7 +355,7 @@ function attendance() {
       "Attendance",
       "Record daily attendance. Unmarked is never treated as absent.",
     ) +
-    `<section class="panel"><div class="toolbar"><label for="att-class">Class</label><select id="att-class">${options(schoolClasses(), selectedClass)}</select><label for="att-date">Date</label><input id="att-date" type="date" value="${selectedDate}" required><span class="badge ${count === list.length ? "" : "amber"}">${count}/${list.length} marked</span></div>${table(["Student", "Attendance"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><select class="attendance-select" data-student="${s.id}" aria-label="Attendance for ${esc(s.name)}">${options(["unmarked", "present", "late", "absent", "excused"], marks[s.id] || "unmarked")}</select></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="save-attendance">Save attendance</button><button class="button secondary" id="present-all">Mark class present</button><span class="status-text" id="attendance-status">${attendanceDraft ? "Unsaved changes" : record.saved ? "Saved in browser · " + (count === list.length ? "class complete" : "class incomplete") : "Not saved yet"}</span></div><div class="note">Demo rate = present + late divided by present + late + absent. Excused and unmarked are excluded. Confirm the school’s policy before production.</div></section>`
+    `<section class="panel"><div class="toolbar"><label for="att-class">Class</label><select id="att-class">${options(schoolClasses(), selectedClass)}</select><label for="att-date">Date</label><input id="att-date" type="date" value="${selectedDate}" required><span class="badge ${count === list.length ? "" : "amber"}">${count}/${list.length} marked</span></div>${table(["Student", "Attendance"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><select class="attendance-select" data-student="${s.id}" aria-label="Attendance for ${esc(s.name)}">${options(["unmarked", "present", "late", "absent", "excused"], marks[s.id] || "unmarked")}</select></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="save-attendance">Save attendance</button><button class="button secondary" id="present-all">Mark class present</button><span class="status-text" id="attendance-status">${attendanceDraft ? "Unsaved changes" : record.saved ? `${schoolDataLive ? "Saved to Neon" : "Saved in browser"} · ${count === list.length ? "class complete" : "class incomplete"}` : "Not saved yet"}</span></div><div class="note">Attendance rate = present + late divided by present + late + absent. Excused and unmarked are excluded.</div></section>`
   );
 }
 function fees() {
@@ -592,7 +612,7 @@ function wire() {
     };
   }
   if (view === "attendance") {
-    const switchContext = (name, value) => {
+    const switchContext = async (name, value) => {
       if (attendanceDraft && !confirm("Discard unsaved attendance changes?")) {
         render();
         return;
@@ -604,6 +624,12 @@ function wire() {
       attendanceDraft = null;
       if (name === "date") selectedDate = value;
       else selectedClass = value;
+      if (schoolDataLive)
+        try {
+          await loadSchoolAttendance(selectedDate, selectedClass);
+        } catch (err) {
+          toast(err.message);
+        }
       render();
     };
     $("#att-class").onchange = (e) => switchContext("class", e.target.value);
@@ -628,7 +654,41 @@ function wire() {
         .forEach((s) => (attendanceDraft[s.id] = "present"));
       render();
     };
-    $("#save-attendance").onclick = () => {
+    $("#save-attendance").onclick = async () => {
+      if (schoolDataLive) {
+        const button = $("#save-attendance");
+        button.disabled = true;
+        try {
+          const marks =
+              attendanceDraft || state.attendance[selectedDate]?.marks || {},
+            classStudentIds = new Set(
+              state.students
+                .filter((student) => student.class === selectedClass)
+                .map((student) => student.id),
+            ),
+            classMarks = Object.fromEntries(
+              Object.entries(marks).filter(([studentId]) =>
+                classStudentIds.has(studentId),
+              ),
+            );
+          await schoolApi("/api/school/attendance", {
+            method: "POST",
+            body: JSON.stringify({
+              date: selectedDate,
+              className: selectedClass,
+              marks: classMarks,
+            }),
+          });
+          attendanceDraft = null;
+          await loadSchoolAttendance(selectedDate, selectedClass);
+          render();
+          toast("Attendance saved to Neon.");
+        } catch (err) {
+          button.disabled = false;
+          toast(err.message);
+        }
+        return;
+      }
       state.attendance[selectedDate] = {
         marks: {
           ...(attendanceDraft || state.attendance[selectedDate]?.marks || {}),
@@ -1109,6 +1169,7 @@ async function showPortal(session) {
     state.settings.term = activeSchool.term;
     await loadSchoolStudents();
     await loadSchoolFinance();
+    await loadSchoolAttendance();
   }
   authScreen.hidden = true;
   authScreen.style.display = "none";
