@@ -885,6 +885,18 @@ window.addEventListener("beforeunload", (e) => {
 function sessionData(result) {
   return result?.data ?? result;
 }
+function sessionFromResult(result) {
+  const data = sessionData(result);
+  if (data?.user && data?.session?.token) return data;
+  if (data?.user && data?.token)
+    return { user: data.user, session: { token: data.token } };
+  return null;
+}
+async function resolvedSession(authResult) {
+  const direct = sessionFromResult(authResult);
+  if (direct) return direct;
+  return sessionFromResult(await auth.getSession());
+}
 function showAuthPanel(id) {
   [
     "login-panel",
@@ -946,7 +958,7 @@ async function initializeAuth() {
         "Create your administrator account to activate this school workspace.";
       $("#invitation-name").value = data.invitation.administrator_name;
       $("#invitation-email").value = data.invitation.administrator_email;
-      const session = sessionData(await auth.getSession());
+      const session = sessionFromResult(await auth.getSession());
       if (session?.user) await acceptInvitation(inviteToken, session);
     } catch (err) {
       $("#invitation-error").textContent = err.message;
@@ -954,7 +966,7 @@ async function initializeAuth() {
     return;
   }
   try {
-    const session = sessionData(await auth.getSession());
+    const session = sessionFromResult(await auth.getSession());
     if (session?.user) {
       showPortal(session);
       return;
@@ -976,7 +988,7 @@ $("#login-form").onsubmit = async (e) => {
       password: String(form.get("password")),
     });
     if (result?.error) throw Error(result.error.message || "Sign-in failed.");
-    const session = sessionData(await auth.getSession());
+    const session = await resolvedSession(result);
     if (!session?.user) throw Error("The session could not be created.");
     const inviteToken = new URLSearchParams(location.search).get("invite");
     if (inviteToken) await acceptInvitation(inviteToken, session);
@@ -1028,7 +1040,7 @@ $("#invitation-form").onsubmit = async (e) => {
     });
     if (result?.error)
       throw Error(result.error.message || "Account creation failed.");
-    const session = sessionData(await auth.getSession());
+    const session = await resolvedSession(result);
     if (!session?.user)
       throw Error("Account created. Please sign in to finish activation.");
     await acceptInvitation(token, session);
