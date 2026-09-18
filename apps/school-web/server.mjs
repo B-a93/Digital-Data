@@ -15,6 +15,8 @@ import {
 } from "./auth-server.mjs";
 import { sendSchoolInvitation } from "./mailer.mjs";
 const root = path.resolve(fileURLToPath(new URL("./public/", import.meta.url)));
+const neonAuthUrl =
+  "https://ep-spring-poetry-b2x3am6k.neonauth.c-6.eu-central-1.aws.neon.tech/neondb/auth";
 const types = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -36,6 +38,53 @@ async function readJsonBody(req) {
       throw Object.assign(new Error("Request too large"), { status: 413 });
   }
   return JSON.parse(value || "{}");
+}
+async function proxyAuth(req, res, pathname, search) {
+  const headers = new Headers();
+  for (const name of [
+    "accept",
+    "content-type",
+    "cookie",
+    "authorization",
+    "user-agent",
+  ]) {
+    if (req.headers[name]) headers.set(name, req.headers[name]);
+  }
+  headers.set("origin", baseUrl() || `https://${req.headers.host}`);
+  const chunks = [];
+  let size = 0;
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    for await (const chunk of req) {
+      size += chunk.length;
+      if (size > 1_000_000)
+        throw Object.assign(new Error("Request too large"), { status: 413 });
+      chunks.push(chunk);
+    }
+  }
+  const suffix = pathname.slice("/api/auth".length);
+  const upstream = await fetch(neonAuthUrl + suffix + search, {
+    method: req.method,
+    headers,
+    body: chunks.length ? Buffer.concat(chunks) : undefined,
+    redirect: "manual",
+  });
+  const responseHeaders = {
+    "Content-Type":
+      upstream.headers.get("content-type") || "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+  };
+  const cookies = upstream.headers.getSetCookie?.() || [];
+  if (cookies.length)
+    responseHeaders["Set-Cookie"] = cookies.map((cookie) =>
+      cookie
+        .replace(/;\s*Domain=[^;]+/gi, "")
+        .replace(/;\s*Path=[^;]+/gi, "; Path=/api/auth"),
+    );
+  const location = upstream.headers.get("location");
+  if (location) responseHeaders.Location = location;
+  res.writeHead(upstream.status, responseHeaders);
+  res.end(Buffer.from(await upstream.arrayBuffer()));
 }
 const tokenHash = (token) => createHash("sha256").update(token).digest("hex");
 const baseUrl = () =>
@@ -62,9 +111,12 @@ async function emailInvitation(record, invite) {
 }
 const server = http.createServer(async (req, res) => {
   try {
-    const pathname = decodeURIComponent(
-      new URL(req.url, "http://localhost").pathname,
-    );
+    const requestUrl = new URL(req.url, "http://localhost");
+    const pathname = decodeURIComponent(requestUrl.pathname);
+    if (pathname === "/api/auth" || pathname.startsWith("/api/auth/")) {
+      await proxyAuth(req, res, pathname, requestUrl.search);
+      return;
+    }
     if (pathname === "/api/health") {
       const database = await databaseHealth();
       const body = JSON.stringify({
