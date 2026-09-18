@@ -15,6 +15,7 @@
     "@neondatabase/auth": "^0.5.0-beta",
     "@neondatabase/neon-js": "^0.7.0-beta",
     "esbuild": "^0.25.10",
+    "jose": "^6.2.5",
     "pg": "^8.16.3"
   }
 }
