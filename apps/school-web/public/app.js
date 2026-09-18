@@ -207,13 +207,29 @@ async function loadSchoolStudents() {
     name: student.full_name,
     class: student.class_name || "Unassigned",
   }));
-  state.charges = [];
-  state.payments = [];
   state.attendance = {};
   state.marks = {};
   state.published = [];
   selectedClass = state.settings.classes[0];
   schoolDataLive = true;
+}
+async function loadSchoolFinance() {
+  const data = await schoolApi("/api/school/finance");
+  if (data.feeTypes.length)
+    state.settings.feeTypes = data.feeTypes.map((item) => item.name);
+  state.charges = data.charges.map((charge) => ({
+    id: charge.id,
+    studentId: charge.student_id,
+    label: charge.description,
+    amount: Number(charge.amount_bututs),
+  }));
+  state.payments = data.payments.map((payment) => ({
+    id: payment.id,
+    studentId: payment.student_id,
+    amount: Number(payment.amount_bututs),
+    reference: payment.receipt_number,
+    date: String(payment.paid_on).slice(0, 10),
+  }));
 }
 function dashboard() {
   const charges = state.charges.reduce((s, c) => s + c.amount, 0),
@@ -326,9 +342,11 @@ function fees() {
   return (
     heading(
       "Fees & payments",
-      "Review charges, record demo receipts and see outstanding balances.",
+      schoolDataLive
+        ? "Review charges, record receipts and see outstanding balances."
+        : "Review charges, record demo receipts and see outstanding balances.",
     ) +
-    `<div class="grid"><section class="panel"><div class="panel-heading"><h2>Record a demo payment</h2></div><form id="payment-form"><div class="field"><label for="pay-student">Student</label><select id="pay-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)} · ${esc(s.admission)}</option>`).join("")}</select></div><div class="field"><label for="amount">Amount in dalasi</label><input id="amount" name="amount" type="text" inputmode="decimal" required placeholder="1500.00"></div><div class="note">Demo cash entry only. Overpayment becomes a displayed credit, not an automatic refund.</div><div class="form-actions"><button class="button">Record payment</button></div><div id="form-error" class="error" role="alert"></div><div id="receipt" role="status"></div></form></section><section class="panel"><div class="panel-heading"><h2>Add a demo charge</h2></div><form id="charge-form"><div class="field"><label for="charge-student">Student</label><select id="charge-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div><div class="field"><label for="charge-label">Fee type</label><select id="charge-label" name="label">${options(state.settings.feeTypes, state.settings.feeTypes[0])}</select></div><div class="field"><label for="charge-amount">Amount in dalasi</label><input id="charge-amount" name="amount" inputmode="decimal" required placeholder="1500.00"></div><div class="form-actions"><button class="button secondary">Add charge</button></div><div id="charge-error" class="error" role="alert"></div></form></section><section class="panel wide"><div class="panel-heading"><h2>Student balances</h2><small>Negative balance = credit</small></div>${table(["Student", "Class", "Balance", "Status"], state.students.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td>${money(balance(state, s.id))}</td><td>${badge(balance(state, s.id))}</td></tr>`).join(""))}</section><section class="panel wide"><div class="panel-heading"><h2>Recent demo receipts</h2></div>${table(
+    `<div class="grid"><section class="panel"><div class="panel-heading"><h2>Record ${schoolDataLive ? "a" : "a demo"} payment</h2></div><form id="payment-form"><div class="field"><label for="pay-student">Student</label><select id="pay-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)} · ${esc(s.admission)}</option>`).join("")}</select></div><div class="field"><label for="amount">Amount in dalasi</label><input id="amount" name="amount" type="text" inputmode="decimal" required placeholder="1500.00"></div><div class="note">Overpayment becomes a displayed credit, not an automatic refund.</div><div class="form-actions"><button class="button">Record payment</button></div><div id="form-error" class="error" role="alert"></div><div id="receipt" role="status"></div></form></section><section class="panel"><div class="panel-heading"><h2>Add ${schoolDataLive ? "a" : "a demo"} charge</h2></div><form id="charge-form"><div class="field"><label for="charge-student">Student</label><select id="charge-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div><div class="field"><label for="charge-label">Fee type</label><select id="charge-label" name="label">${options(state.settings.feeTypes, state.settings.feeTypes[0])}</select></div><div class="field"><label for="charge-amount">Amount in dalasi</label><input id="charge-amount" name="amount" inputmode="decimal" required placeholder="1500.00"></div><div class="form-actions"><button class="button secondary">Add charge</button></div><div id="charge-error" class="error" role="alert"></div></form></section><section class="panel wide"><div class="panel-heading"><h2>Student balances</h2><small>Negative balance = credit</small></div>${table(["Student", "Class", "Balance", "Status"], state.students.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td>${money(balance(state, s.id))}</td><td>${badge(balance(state, s.id))}</td></tr>`).join(""))}</section><section class="panel wide"><div class="panel-heading"><h2>Recent ${schoolDataLive ? "" : "demo "}receipts</h2></div>${table(
       ["Receipt", "Student", "Date", "Amount"],
       state.payments
         .slice()
@@ -517,6 +535,7 @@ function wire() {
           );
           editingStudentId = null;
           await loadSchoolStudents();
+          await loadSchoolFinance();
           render();
           toast(
             editing ? "Student details updated." : "Student saved to Neon.",
@@ -623,7 +642,7 @@ function wire() {
     };
   }
   if (view === "fees") {
-    $("#payment-form").onsubmit = (e) => {
+    $("#payment-form").onsubmit = async (e) => {
       e.preventDefault();
       try {
         const f = new FormData(e.target),
@@ -632,10 +651,29 @@ function wire() {
         if (
           amount > Math.max(0, balance(state, studentId)) &&
           !confirm(
-            "This payment creates or increases a credit. Record this demo overpayment?",
+            "This payment creates or increases a credit. Record this overpayment?",
           )
         )
           return;
+        if (schoolDataLive) {
+          const button = e.target.querySelector(".button"),
+            currentOperation = operation;
+          button.disabled = true;
+          const result = await schoolApi("/api/school/payments", {
+            method: "POST",
+            body: JSON.stringify({
+              studentId,
+              amountBututs: amount,
+              operationKey: currentOperation,
+            }),
+          });
+          operation = crypto.randomUUID();
+          await loadSchoolFinance();
+          render();
+          $("#receipt").innerHTML =
+            `<div class="note">Saved to Neon · Receipt <strong>${esc(result.payment.receipt_number)}</strong><br>${money(Number(result.payment.amount_bututs))} · ${esc(state.students.find((s) => s.id === studentId).name)}</div>`;
+          return;
+        }
         const receipt = recordPayment(state, {
           studentId,
           amount,
@@ -649,25 +687,44 @@ function wire() {
           `<div class="note">${persisted ? "Saved locally" : "In memory only"} · Receipt <strong>${esc(receipt.reference)}</strong><br>${money(receipt.amount)} · ${esc(state.students.find((s) => s.id === studentId).name)}</div>`;
       } catch (err) {
         $("#form-error").textContent = err.message;
+        e.target.querySelector(".button").disabled = false;
       }
     };
-    $("#charge-form").onsubmit = (e) => {
+    $("#charge-form").onsubmit = async (e) => {
       e.preventDefault();
       try {
         const f = new FormData(e.target),
-          label = f.get("label").trim();
+          label = f.get("label").trim(),
+          amount = cents(f.get("amount"));
         if (!label) throw Error("Enter a charge description.");
+        if (schoolDataLive) {
+          const button = e.target.querySelector(".button");
+          button.disabled = true;
+          await schoolApi("/api/school/charges", {
+            method: "POST",
+            body: JSON.stringify({
+              studentId: f.get("student"),
+              description: label,
+              amountBututs: amount,
+            }),
+          });
+          await loadSchoolFinance();
+          render();
+          toast("Charge saved to Neon.");
+          return;
+        }
         state.charges.push({
           id: crypto.randomUUID(),
           studentId: f.get("student"),
           label,
-          amount: cents(f.get("amount")),
+          amount,
         });
         const persisted = save();
         render();
         if (persisted) toast("Demo charge saved.");
       } catch (err) {
         $("#charge-error").textContent = err.message;
+        e.target.querySelector(".button").disabled = false;
       }
     };
   }
@@ -1051,6 +1108,7 @@ async function showPortal(session) {
     state.settings.name = activeSchool.name;
     state.settings.term = activeSchool.term;
     await loadSchoolStudents();
+    await loadSchoolFinance();
   }
   authScreen.hidden = true;
   authScreen.style.display = "none";
