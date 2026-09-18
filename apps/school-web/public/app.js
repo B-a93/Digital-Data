@@ -1196,6 +1196,14 @@ async function resolvedSession(authResult) {
   if (direct) return direct;
   return sessionFromResult(await auth.getSession());
 }
+async function authenticatedToken() {
+  const token = await auth.getJWTToken();
+  if (!token || token.split(".").length !== 3)
+    throw Error(
+      "The secure login token could not be created. Please sign in again.",
+    );
+  return token;
+}
 function showAuthPanel(id) {
   [
     "login-panel",
@@ -1212,7 +1220,7 @@ async function showPortal(session) {
   const authScreen = $("#auth-screen"),
     layout = $(".layout"),
     email = session?.user?.email || "";
-  accessToken = session?.session?.token || "";
+  accessToken = await authenticatedToken();
   const response = await fetch("/api/me", {
     headers: { Authorization: "Bearer " + accessToken },
   });
@@ -1316,11 +1324,12 @@ $("#login-form").onsubmit = async (e) => {
   }
 };
 async function acceptInvitation(token, session) {
+  const jwt = await authenticatedToken();
   const response = await fetch(
       `/api/invitations/${encodeURIComponent(token)}`,
       {
         method: "POST",
-        headers: { Authorization: `Bearer ${session.session.token}` },
+        headers: { Authorization: `Bearer ${jwt}` },
       },
     ),
     data = await response.json();
