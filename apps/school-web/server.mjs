@@ -28,7 +28,7 @@ const json = (res, status, data) => {
   });
   res.end(JSON.stringify(data));
 };
-async function body(req) {
+async function readJsonBody(req) {
   let value = "";
   for await (const chunk of req) {
     value += chunk;
@@ -89,7 +89,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       if (req.method === "POST") {
-        const data = await body(req),
+        const data = await readJsonBody(req),
           name = String(data.name || "").trim(),
           slug = String(data.slug || "")
             .trim()
@@ -264,7 +264,7 @@ const server = http.createServer(async (req, res) => {
       res.end("Forbidden");
       return;
     }
-    const body = await readFile(target);
+    const fileBody = await readFile(target);
     res.writeHead(200, {
       "Content-Type": types[path.extname(target)] || "application/octet-stream",
       "X-Content-Type-Options": "nosniff",
@@ -272,7 +272,7 @@ const server = http.createServer(async (req, res) => {
       "Content-Security-Policy":
         "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://ep-spring-poetry-b2x3am6k.neonauth.c-6.eu-central-1.aws.neon.tech; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
     });
-    res.end(body);
+    res.end(fileBody);
   } catch (error) {
     const failedPath = new URL(req.url, "http://localhost").pathname;
     if (failedPath.startsWith("/api/")) {
