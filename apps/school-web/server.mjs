@@ -34,7 +34,7 @@ async function readJsonBody(req) {
   let value = "";
   for await (const chunk of req) {
     value += chunk;
-    if (value.length > 20000)
+    if (value.length > 200000)
       throw Object.assign(new Error("Request too large"), { status: 413 });
   }
   return JSON.parse(value || "{}");
@@ -426,6 +426,93 @@ const server = http.createServer(async (req, res) => {
         )
       ).rows[0];
       json(res, 201, { payment });
+      return;
+    }
+    if (pathname === "/api/school/attendance") {
+      const context = await requireSchoolContext(req),
+        attendanceDate = String(
+          req.method === "GET" ? requestUrl.searchParams.get("date") || "" : "",
+        ),
+        className = String(
+          req.method === "GET"
+            ? requestUrl.searchParams.get("class") || ""
+            : "",
+        ).trim();
+      if (req.method === "GET") {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(attendanceDate) || !className) {
+          json(res, 400, { error: "Choose a valid class and date." });
+          return;
+        }
+        const result = await query(
+          `SELECT st.id AS student_id,a.status,a.recorded_at
+           FROM students st JOIN classes c ON c.id=st.class_id
+           LEFT JOIN attendance a ON a.student_id=st.id AND a.attendance_date=$3
+           WHERE st.school_id=$1 AND c.name=$2 ORDER BY st.full_name`,
+          [context.school_id, className, attendanceDate],
+        );
+        json(res, 200, {
+          marks: Object.fromEntries(
+            result.rows
+              .filter((row) => row.status)
+              .map((row) => [row.student_id, row.status]),
+          ),
+          saved:
+            result.rows.find((row) => row.recorded_at)?.recorded_at || null,
+        });
+        return;
+      }
+      if (req.method === "POST") {
+        const data = await readJsonBody(req),
+          date = String(data.date || ""),
+          selectedClass = String(data.className || "").trim(),
+          marks =
+            data.marks && typeof data.marks === "object" ? data.marks : {};
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !selectedClass) {
+          json(res, 400, { error: "Choose a valid class and date." });
+          return;
+        }
+        const allowedStatuses = new Set([
+          "present",
+          "late",
+          "absent",
+          "excused",
+        ]);
+        const saved = await transaction(async (client) => {
+          const students = (
+            await client.query(
+              `SELECT st.id FROM students st JOIN classes c ON c.id=st.class_id
+               WHERE st.school_id=$1 AND c.name=$2`,
+              [context.school_id, selectedClass],
+            )
+          ).rows;
+          const studentIds = new Set(students.map((student) => student.id));
+          for (const [studentId, status] of Object.entries(marks)) {
+            if (!studentIds.has(studentId) || !allowedStatuses.has(status))
+              throw Object.assign(
+                new Error("Attendance contains invalid records."),
+                {
+                  status: 400,
+                },
+              );
+          }
+          await client.query(
+            `DELETE FROM attendance a USING students st,classes c
+             WHERE a.student_id=st.id AND st.class_id=c.id AND st.school_id=$1
+             AND c.name=$2 AND a.attendance_date=$3`,
+            [context.school_id, selectedClass, date],
+          );
+          for (const [studentId, status] of Object.entries(marks))
+            await client.query(
+              `INSERT INTO attendance(school_id,student_id,attendance_date,status,recorded_by)
+               VALUES($1,$2,$3,$4,$5)`,
+              [context.school_id, studentId, date, status, context.id],
+            );
+          return new Date().toISOString();
+        });
+        json(res, 200, { status: "saved", saved });
+        return;
+      }
+      json(res, 405, { error: "Method not allowed" });
       return;
     }
     if (pathname === "/api/platform/schools") {
