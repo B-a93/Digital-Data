@@ -133,6 +133,48 @@ const server = http.createServer(async (req, res) => {
       res.end(body);
       return;
     }
+    if (pathname === "/api/me") {
+      if (req.method !== "GET") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const user = await verifyAuthenticatedUser(req);
+      const ownerEmail = String(process.env.PLATFORM_OWNER_EMAIL || "")
+        .trim()
+        .toLowerCase();
+      if (ownerEmail && user.email === ownerEmail) {
+        json(res, 200, {
+          user: { id: user.id, email: user.email, role: "platform_owner" },
+          school: null,
+        });
+        return;
+      }
+      const membership = await query(
+        `SELECT su.role,s.id,s.name,s.slug,s.current_term,s.status
+         FROM school_users su JOIN schools s ON s.id=su.school_id
+         WHERE su.auth_user_id=$1 AND s.status='active'
+         ORDER BY su.created_at LIMIT 1`,
+        [user.id],
+      );
+      if (!membership.rows[0]) {
+        json(res, 403, {
+          error: "This account is not connected to an active school.",
+        });
+        return;
+      }
+      const row = membership.rows[0];
+      json(res, 200, {
+        user: { id: user.id, email: user.email, role: row.role },
+        school: {
+          id: row.id,
+          name: row.name,
+          slug: row.slug,
+          term: row.current_term,
+          status: row.status,
+        },
+      });
+      return;
+    }
     if (pathname === "/api/platform/schools") {
       await requirePlatformOwner(req);
       if (req.method === "GET") {
