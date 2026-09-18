@@ -9,6 +9,22 @@ CREATE TABLE IF NOT EXISTS schools (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS school_type text NOT NULL DEFAULT 'public';
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS region text;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS district text;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS contact_name text;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS contact_email text;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS contact_phone text;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'pending';
+
+CREATE TABLE IF NOT EXISTS school_onboarding (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL UNIQUE REFERENCES schools(id) ON DELETE CASCADE,
+  administrator_name text NOT NULL,
+  administrator_email text NOT NULL,
+  invitation_status text NOT NULL DEFAULT 'pending',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
 
 CREATE TABLE IF NOT EXISTS school_users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
