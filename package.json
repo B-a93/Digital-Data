@@ -1,6 +1,20 @@
 {
-  "name": "digital-data", "private": true, "type": "module",
-  "scripts": {"dev": "node apps/school-web/server.mjs", "start": "node apps/school-web/server.mjs", "build": "node apps/school-web/build.mjs", "test": "node --test apps/school-web/tests/*.test.mjs"},
-  "engines": {"node": ">=20"},
-  "dependencies": {"pg": "^8.16.3"}
+  "name": "digital-data",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node apps/school-web/server.mjs",
+    "start": "node apps/school-web/server.mjs",
+    "build": "node apps/school-web/build.mjs",
+    "test": "node --test apps/school-web/tests/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@neondatabase/auth": "^0.5.0-beta",
+    "@neondatabase/neon-js": "^0.7.0-beta",
+    "esbuild": "^0.25.10",
+    "pg": "^8.16.3"
+  }
 }
