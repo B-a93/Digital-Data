@@ -251,6 +251,36 @@ async function loadSchoolAttendance(
     saved: data.saved,
   };
 }
+async function loadSchoolResults(className = selectedClass) {
+  if (!schoolDataLive || !className) return;
+  const data = await schoolApi(
+    `/api/school/results?class=${encodeURIComponent(className)}&term=${encodeURIComponent(state.settings.term)}`,
+  );
+  const classStudentIds = new Set(
+    state.students
+      .filter((student) => student.class === className)
+      .map((student) => student.id),
+  );
+  for (const studentId of classStudentIds) delete state.marks[studentId];
+  state.published = state.published.filter(
+    (item) => !(item.class === className && item.term === state.settings.term),
+  );
+  if (!data.assessment) return;
+  for (const mark of data.marks)
+    state.marks[mark.student_id] = Number(mark.score);
+  state.published.push({
+    class: className,
+    term: data.assessment.term,
+    version: Number(data.assessment.version),
+    pass: state.settings.pass,
+    entries: data.marks.map((mark) => ({
+      id: mark.student_id,
+      admission: mark.student_number,
+      name: mark.full_name,
+      score: Number(mark.score),
+    })),
+  });
+}
 function dashboard() {
   const charges = state.charges.reduce((s, c) => s + c.amount, 0),
     paid = state.payments.reduce((s, p) => s + p.amount, 0),
@@ -789,8 +819,14 @@ function wire() {
     };
   }
   if (view === "results") {
-    $("#res-class").onchange = (e) => {
+    $("#res-class").onchange = async (e) => {
       selectedClass = e.target.value;
+      if (schoolDataLive)
+        try {
+          await loadSchoolResults(selectedClass);
+        } catch (err) {
+          toast(err.message);
+        }
       render();
     };
     document.querySelectorAll(".mark-input").forEach(
@@ -818,7 +854,7 @@ function wire() {
           $("#form-error").textContent = "";
         }),
     );
-    $("#publish").onclick = () => {
+    $("#publish").onclick = async () => {
       try {
         const inputs = [...document.querySelectorAll(".mark-input")];
         if (inputs.some((i) => !i.value || !i.checkValidity()))
@@ -830,10 +866,29 @@ function wire() {
         );
         if (
           !confirm(
-            "Approve and publish a new fictional result snapshot for this class?",
+            `Approve and publish a new ${schoolDataLive ? "" : "fictional "}result snapshot for this class?`,
           )
         )
           return;
+        if (schoolDataLive) {
+          const button = $("#publish");
+          button.disabled = true;
+          await schoolApi("/api/school/results", {
+            method: "POST",
+            body: JSON.stringify({
+              className: selectedClass,
+              term: state.settings.term,
+              marks: inputs.map((input) => ({
+                studentId: input.dataset.student,
+                score: Number(input.value),
+              })),
+            }),
+          });
+          await loadSchoolResults(selectedClass);
+          render();
+          toast("Results published to Neon.");
+          return;
+        }
         const snap = publishResults(state, selectedClass);
         const persisted = save();
         render();
@@ -841,6 +896,7 @@ function wire() {
           toast(`Demo results version ${snap.version} published locally.`);
       } catch (err) {
         $("#form-error").textContent = err.message;
+        $("#publish").disabled = false;
       }
     };
   }
@@ -1170,6 +1226,7 @@ async function showPortal(session) {
     await loadSchoolStudents();
     await loadSchoolFinance();
     await loadSchoolAttendance();
+    await loadSchoolResults();
   }
   authScreen.hidden = true;
   authScreen.style.display = "none";
