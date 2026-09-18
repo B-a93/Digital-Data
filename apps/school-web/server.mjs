@@ -18,7 +18,7 @@ const server = http.createServer(async (req,res) => {
     const target = path.resolve(root, '.' + (pathname === '/' ? '/index.html' : pathname));
     if (!target.startsWith(root + path.sep)) {res.writeHead(403);res.end('Forbidden');return;}
     const body = await readFile(target);
-    res.writeHead(200, {'Content-Type':types[path.extname(target)] || 'application/octet-stream', 'X-Content-Type-Options':'nosniff', 'Cache-Control':'no-store', 'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});
+    res.writeHead(200, {'Content-Type':types[path.extname(target)] || 'application/octet-stream', 'X-Content-Type-Options':'nosniff', 'Cache-Control':'no-store', 'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://ep-spring-poetry-b2x3am6k.neonauth.c-6.eu-central-1.aws.neon.tech; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"});
     res.end(body);
   } catch {res.writeHead(404);res.end('Not found');}
 });
