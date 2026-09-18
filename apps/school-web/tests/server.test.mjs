@@ -8,6 +8,9 @@ test('server serves prototype and rejects missing files',async()=>{
   const index=await fetch('http://127.0.0.1:3107/');
   assert.equal(index.status,200);assert.match(await index.text(),/Fictional data only/);
   assert.match(index.headers.get('content-security-policy'),/script-src 'self'/);
+  const health=await fetch('http://127.0.0.1:3107/api/health');
+  assert.equal(health.status,503);
+  assert.deepEqual(await health.json(),{status:'degraded',database:{ok:false,configured:false,error:'DATABASE_URL is not configured'}});
   assert.equal((await fetch('http://127.0.0.1:3107/domain.js')).status,200);
   assert.equal((await fetch('http://127.0.0.1:3107/missing.txt')).status,404);
  } finally {child.kill();}
