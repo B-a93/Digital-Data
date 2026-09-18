@@ -40,8 +40,8 @@ function download(type){let rows;if(type==='students')rows=[['Student number','N
 $('#role').onchange=e=>{role=e.target.value;render();};$('#reset').onclick=()=>{if(!confirm('Reset all demo records in this browser? This removes your prototype edits.'))return;state=seed();attendanceDraft=null;operation=crypto.randomUUID();const persisted=save();render();if(persisted)toast('Fictional demo records restored.');};window.addEventListener('hashchange',()=>{attendanceDraft=null;if(!$('.layout').hidden)render();});window.addEventListener('beforeunload',e=>{if(attendanceDraft){e.preventDefault();e.returnValue='';}});
 
 function sessionData(result){return result?.data ?? result;}
-function showPortal(session){$('#auth-screen').hidden=true;$('.layout').hidden=false;$('#signed-in-user').textContent=session?.user?.email||'Signed in';render();if(storageWarning)toast('Stored demo data could not be read; fictional examples loaded.');}
-function showLogin(message=''){$('.layout').hidden=true;$('#auth-screen').hidden=false;$('#login-error').textContent=message;}
+function showPortal(session){const authScreen=$('#auth-screen'),layout=$('.layout');authScreen.hidden=true;authScreen.style.display='none';layout.hidden=false;layout.style.display='';$('#signed-in-user').textContent=session?.user?.email||'Signed in';render();if(storageWarning)toast('Stored demo data could not be read; fictional examples loaded.');}
+function showLogin(message=''){const authScreen=$('#auth-screen'),layout=$('.layout');layout.hidden=true;layout.style.display='none';authScreen.hidden=false;authScreen.style.display='grid';$('#login-error').textContent=message;}
 async function initializeAuth(){
   try{const session=sessionData(await auth.getSession());if(session?.user){showPortal(session);return;}}catch{}
   showLogin();
