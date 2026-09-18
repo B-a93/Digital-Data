@@ -515,6 +515,111 @@ const server = http.createServer(async (req, res) => {
       json(res, 405, { error: "Method not allowed" });
       return;
     }
+    if (pathname === "/api/school/results") {
+      const context = await requireSchoolContext(req);
+      if (req.method === "GET") {
+        const className = String(
+            requestUrl.searchParams.get("class") || "",
+          ).trim(),
+          term = String(requestUrl.searchParams.get("term") || "").trim();
+        if (!className || !term) {
+          json(res, 400, { error: "Choose a valid class and term." });
+          return;
+        }
+        const assessment = (
+          await query(
+            `SELECT a.id,a.title,a.term,a.maximum_score,a.published_at,
+              (SELECT count(*) FROM assessments versions
+               WHERE versions.school_id=a.school_id AND versions.class_id=a.class_id
+               AND versions.term=a.term AND versions.published_at IS NOT NULL) AS version
+             FROM assessments a JOIN classes c ON c.id=a.class_id
+             WHERE a.school_id=$1 AND c.name=$2 AND a.term=$3 AND a.published_at IS NOT NULL
+             ORDER BY a.published_at DESC LIMIT 1`,
+            [context.school_id, className, term],
+          )
+        ).rows[0];
+        if (!assessment) {
+          json(res, 200, { assessment: null, marks: [] });
+          return;
+        }
+        const marks = await query(
+          `SELECT st.id AS student_id,st.student_number,st.full_name,am.score
+           FROM assessment_marks am JOIN students st ON st.id=am.student_id
+           WHERE am.assessment_id=$1 ORDER BY st.full_name`,
+          [assessment.id],
+        );
+        json(res, 200, { assessment, marks: marks.rows });
+        return;
+      }
+      if (req.method === "POST") {
+        const data = await readJsonBody(req),
+          className = String(data.className || "").trim(),
+          term = String(data.term || "").trim(),
+          marks = Array.isArray(data.marks) ? data.marks : [];
+        if (!className || !term || !marks.length) {
+          json(res, 400, { error: "Enter a result for every student." });
+          return;
+        }
+        const result = await transaction(async (client) => {
+          const schoolClass = (
+            await client.query(
+              `SELECT id FROM classes WHERE school_id=$1 AND name=$2`,
+              [context.school_id, className],
+            )
+          ).rows[0];
+          if (!schoolClass)
+            throw Object.assign(new Error("Class not found."), { status: 404 });
+          const students = (
+            await client.query(
+              `SELECT id FROM students WHERE school_id=$1 AND class_id=$2 ORDER BY id`,
+              [context.school_id, schoolClass.id],
+            )
+          ).rows;
+          const expectedIds = new Set(students.map((student) => student.id));
+          if (
+            marks.length !== expectedIds.size ||
+            marks.some(
+              (mark) =>
+                !expectedIds.has(String(mark.studentId)) ||
+                !Number.isFinite(Number(mark.score)) ||
+                Number(mark.score) < 0 ||
+                Number(mark.score) > 100,
+            )
+          )
+            throw Object.assign(
+              new Error(
+                "Enter a valid mark for every student before publishing.",
+              ),
+              { status: 400 },
+            );
+          const assessment = (
+            await client.query(
+              `INSERT INTO assessments(school_id,class_id,title,term,maximum_score,published_at)
+               VALUES($1,$2,$3,$4,100,now()) RETURNING id,published_at`,
+              [context.school_id, schoolClass.id, "Term result", term],
+            )
+          ).rows[0];
+          for (const mark of marks)
+            await client.query(
+              `INSERT INTO assessment_marks(assessment_id,student_id,score)
+               VALUES($1,$2,$3)`,
+              [assessment.id, mark.studentId, Number(mark.score)],
+            );
+          const version = (
+            await client.query(
+              `SELECT count(*)::int AS count FROM assessments
+               WHERE school_id=$1 AND class_id=$2 AND term=$3 AND published_at IS NOT NULL`,
+              [context.school_id, schoolClass.id, term],
+            )
+          ).rows[0].count;
+          return { ...assessment, version };
+        });
+        json(res, 201, { assessment: result });
+        return;
+      }
+      json(res, 405, { error: "Method not allowed" });
+      return;
+    }
     if (pathname === "/api/platform/schools") {
       await requirePlatformOwner(req);
       if (req.method === "GET") {
