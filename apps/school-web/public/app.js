@@ -44,6 +44,7 @@ let view = "dashboard",
   accessToken = "",
   isPlatformOwner = false,
   activeSchool = null,
+  schoolDataLive = false,
   platformSchools = [];
 let attendanceDraft = null;
 function localDate() {
@@ -183,6 +184,37 @@ async function loadSchools() {
     if (view === "platform") $("#platform-error").textContent = err.message;
   }
 }
+async function schoolApi(path, options = {}) {
+  const response = await fetch(path, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + accessToken,
+        ...options.headers,
+      },
+    }),
+    data = await response.json();
+  if (!response.ok) throw Error(data.error || "Request failed");
+  return data;
+}
+async function loadSchoolStudents() {
+  const data = await schoolApi("/api/school/students");
+  if (data.classes.length)
+    state.settings.classes = data.classes.map((item) => item.name);
+  state.students = data.students.map((student) => ({
+    id: student.id,
+    admission: student.student_number,
+    name: student.full_name,
+    class: student.class_name || "Unassigned",
+  }));
+  state.charges = [];
+  state.payments = [];
+  state.attendance = {};
+  state.marks = {};
+  state.published = [];
+  selectedClass = state.settings.classes[0];
+  schoolDataLive = true;
+}
 function dashboard() {
   const charges = state.charges.reduce((s, c) => s + c.amount, 0),
     paid = state.payments.reduce((s, p) => s + p.amount, 0),
@@ -272,7 +304,7 @@ function students() {
       "Students",
       "Keep a clear register of enrolment and class assignments.",
     ) +
-    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>${editing ? "Edit student" : "Register a fictional student"}</h2><span class="badge gray">Demo record</span></div><form id="student-form"><div class="form-grid"><div class="field"><label for="student-number">Student number</label><input id="student-number" name="studentNumber" maxlength="30" required autocomplete="off" placeholder="e.g. STU-2026-001" value="${esc(editing?.admission || "")}"></div><div class="field"><label for="name">Student full name</label><input id="name" name="name" maxlength="80" required placeholder="e.g. Awa Example" value="${esc(editing?.name || "")}"></div><div class="field"><label for="new-class">Class</label><select id="new-class" name="class">${options(schoolClasses(), editing?.class || schoolClasses()[0])}</select></div></div><div class="form-actions"><button class="button">${editing ? "Save changes" : "Add student"}</button>${editing ? '<button type="button" class="button secondary" id="cancel-edit">Cancel</button>' : ""}<span class="status-text">Each student number must be unique.</span></div><div class="error" id="form-error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Student register</h2><small>${list.length} students</small></div><div class="toolbar"><input id="search" type="search" aria-label="Search students" value="${esc(search)}" placeholder="Search name or student number"><select id="student-class" aria-label="Filter students by class"><option value="">All classes</option>${options(schoolClasses(), studentClass)}</select></div>${table(["Student", "Class", "Balance", "Action"], list.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td>${money(balance(state, s.id))}</td><td><button class="text-button edit-student" data-id="${s.id}">Edit</button></td></tr>`).join(""))}</section></div>`
+    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>${editing ? "Edit student" : schoolDataLive ? "Register a student" : "Register a fictional student"}</h2><span class="badge gray">${schoolDataLive ? "Neon record" : "Demo record"}</span></div><form id="student-form"><div class="form-grid"><div class="field"><label for="student-number">Student number</label><input id="student-number" name="studentNumber" maxlength="30" required autocomplete="off" placeholder="e.g. STU-2026-001" value="${esc(editing?.admission || "")}"></div><div class="field"><label for="name">Student full name</label><input id="name" name="name" maxlength="80" required placeholder="e.g. Awa Example" value="${esc(editing?.name || "")}"></div><div class="field"><label for="new-class">Class</label><select id="new-class" name="class">${options(schoolClasses(), editing?.class || schoolClasses()[0])}</select></div></div><div class="form-actions"><button class="button">${editing ? "Save changes" : "Add student"}</button>${editing ? '<button type="button" class="button secondary" id="cancel-edit">Cancel</button>' : ""}<span class="status-text">Each student number must be unique within this school.</span></div><div class="error" id="form-error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Student register</h2><small>${list.length} students</small></div><div class="toolbar"><input id="search" type="search" aria-label="Search students" value="${esc(search)}" placeholder="Search name or student number"><select id="student-class" aria-label="Filter students by class"><option value="">All classes</option>${options(schoolClasses(), studentClass)}</select></div>${table(["Student", "Class", "Balance", "Action"], list.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td>${money(balance(state, s.id))}</td><td><button class="text-button edit-student" data-id="${s.id}">Edit</button></td></tr>`).join(""))}</section></div>`
   );
 }
 function attendance() {
@@ -437,7 +469,7 @@ function wire() {
     );
   }
   if (view === "students") {
-    $("#student-form").onsubmit = (e) => {
+    $("#student-form").onsubmit = async (e) => {
       e.preventDefault();
       const f = new FormData(e.target),
         name = f.get("name").trim(),
@@ -466,6 +498,35 @@ function wire() {
         return;
       }
       const editing = state.students.find((s) => s.id === editingStudentId);
+      if (schoolDataLive) {
+        const button = e.target.querySelector(".button");
+        button.disabled = true;
+        try {
+          await schoolApi(
+            editing
+              ? `/api/school/students/${editing.id}`
+              : "/api/school/students",
+            {
+              method: editing ? "PATCH" : "POST",
+              body: JSON.stringify({
+                studentNumber,
+                fullName: name,
+                className: f.get("class"),
+              }),
+            },
+          );
+          editingStudentId = null;
+          await loadSchoolStudents();
+          render();
+          toast(
+            editing ? "Student details updated." : "Student saved to Neon.",
+          );
+        } catch (err) {
+          $("#form-error").textContent = err.message;
+          button.disabled = false;
+        }
+        return;
+      }
       if (editing) {
         editing.admission = studentNumber;
         editing.name = name;
@@ -989,6 +1050,7 @@ async function showPortal(session) {
   if (activeSchool) {
     state.settings.name = activeSchool.name;
     state.settings.term = activeSchool.term;
+    await loadSchoolStudents();
   }
   authScreen.hidden = true;
   authScreen.style.display = "none";
