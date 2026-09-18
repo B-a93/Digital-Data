@@ -6,7 +6,7 @@ test('server serves prototype and rejects missing files',async()=>{
  try {
   await new Promise((resolve,reject)=>{child.stdout.once('data',resolve);child.once('error',reject);child.once('exit',code=>reject(Error('Server exited '+code)));});
   const index=await fetch('http://127.0.0.1:3107/');
-  assert.equal(index.status,200);assert.match(await index.text(),/Fictional data only/);
+  assert.equal(index.status,200);assert.match(await index.text(),/Sign in to your school/);
   assert.match(index.headers.get('content-security-policy'),/script-src 'self'/);
   const health=await fetch('http://127.0.0.1:3107/api/health');
   assert.equal(health.status,503);
