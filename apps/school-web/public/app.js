@@ -331,7 +331,7 @@ function reports() {
       "Reports",
       "Download fictional records for review—not official school documents.",
     ) +
-    `<section class="panel">${[
+    `<div class="stack"><section class="panel"><div class="panel-heading"><div><h2>Payment status report</h2><p>Separate students with outstanding balances from students who are fully paid.</p></div><span class="badge gray">${esc(state.settings.term)}</span></div><div class="quick-actions"><button class="button" id="payment-excel">Download Excel</button><button class="button secondary" id="payment-print">Print or save as PDF</button></div><div class="note">Credit balances are included with fully paid students and clearly marked as credit.</div></section><section class="panel">${[
       [
         "students",
         "Student register",
@@ -354,7 +354,7 @@ function reports() {
       )
       .join(
         "",
-      )}<div class="note">Exports include this browser’s demo records. A production system needs server-side permission checks, school-scoped exports and audit logging.</div></section>`
+      )}<div class="note">Exports currently include this school workspace’s browser demo records. Real Neon student and payment records will replace them in the production stage.</div></section></div>`
   );
 }
 function settings() {
@@ -666,10 +666,13 @@ function wire() {
       }
     };
   }
-  if (view === "reports")
+  if (view === "reports") {
     document
       .querySelectorAll(".export")
       .forEach((b) => (b.onclick = () => download(b.dataset.report)));
+    $("#payment-excel").onclick = downloadPaymentReportExcel;
+    $("#payment-print").onclick = printPaymentReport;
+  }
   if (view === "settings") {
     $("#settings-form").onsubmit = (e) => {
       e.preventDefault();
@@ -853,6 +856,67 @@ function download(type) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   toast("Fictional-data CSV downloaded.");
+}
+function paymentReportRows() {
+  return state.students
+    .map((student) => {
+      const charges = state.charges
+          .filter((item) => item.studentId === student.id)
+          .reduce((total, item) => total + item.amount, 0),
+        payments = state.payments
+          .filter((item) => item.studentId === student.id)
+          .reduce((total, item) => total + item.amount, 0);
+      return { ...student, charges, payments, due: charges - payments };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+function reportGroups() {
+  const rows = paymentReportRows();
+  return {
+    outstanding: rows.filter((row) => row.due > 0),
+    paid: rows.filter((row) => row.due <= 0),
+  };
+}
+function xml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+function excelSheet(name, rows) {
+  const excelRow = (values) =>
+      `<Row>${values.map((value, index) => `<Cell ss:StyleID="${index > 2 ? "Money" : "Text"}"><Data ss:Type="${index > 2 ? "Number" : "String"}">${xml(value)}</Data></Cell>`).join("")}</Row>`,
+    totalCharges = rows.reduce((sum, row) => sum + row.charges, 0),
+    totalPayments = rows.reduce((sum, row) => sum + row.payments, 0),
+    totalDue = rows.reduce((sum, row) => sum + row.due, 0);
+  return `<Worksheet ss:Name="${xml(name)}"><Table><Column ss:Width="95"/><Column ss:Width="180"/><Column ss:Width="90"/><Column ss:Width="85"/><Column ss:Width="85"/><Column ss:Width="85"/><Row ss:StyleID="Title"><Cell ss:MergeAcross="5"><Data ss:Type="String">${xml(state.settings.name)} - ${xml(name)} Students</Data></Cell></Row><Row><Cell ss:MergeAcross="5"><Data ss:Type="String">${xml(state.settings.term)} | Generated ${xml(new Date().toLocaleDateString("en-GB"))}</Data></Cell></Row>${excelRow(["Student number", "Student name", "Class", "Charges (GMD)", "Paid (GMD)", "Balance (GMD)"])}${rows.map((row) => excelRow([row.admission, row.name, row.class, row.charges / 100, row.payments / 100, row.due / 100])).join("")}${excelRow(["", "TOTAL", `${rows.length} students`, totalCharges / 100, totalPayments / 100, totalDue / 100])}</Table><WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel"><FreezePanes/><FrozenNoSplit/><SplitHorizontal>3</SplitHorizontal><TopRowBottomPane>3</TopRowBottomPane></WorksheetOptions></Worksheet>`;
+}
+function downloadPaymentReportExcel() {
+  const groups = reportGroups(),
+    workbook = `<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Styles><Style ss:ID="Text"><Alignment ss:Vertical="Center"/></Style><Style ss:ID="Title"><Font ss:Bold="1" ss:Size="14"/><Interior ss:Color="#EAF4EF" ss:Pattern="Solid"/></Style><Style ss:ID="Money"><NumberFormat ss:Format="#,##0.00"/></Style></Styles>${excelSheet("Outstanding", groups.outstanding)}${excelSheet("Fully Paid", groups.paid)}</Workbook>`,
+    blob = new Blob([workbook], { type: "application/vnd.ms-excel" }),
+    url = URL.createObjectURL(blob),
+    anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${state.settings.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-payment-status.xls`;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast("Payment status Excel report downloaded.");
+}
+function printPaymentReport() {
+  const popup = window.open("", "_blank");
+  if (!popup) {
+    toast("Allow pop-ups to open the printable report.");
+    return;
+  }
+  const groups = reportGroups(),
+    section = (title, rows) =>
+      `<section><h2>${esc(title)} <small>${rows.length} students</small></h2><table><thead><tr><th>Student number</th><th>Name</th><th>Class</th><th>Charges</th><th>Paid</th><th>Balance</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${esc(row.admission)}</td><td>${esc(row.name)}</td><td>${esc(row.class)}</td><td>${money(row.charges)}</td><td>${money(row.payments)}</td><td>${money(row.due)}</td></tr>`).join("") || '<tr><td colspan="6">No students in this category.</td></tr>'}</tbody><tfoot><tr><th colspan="3">Total</th><th>${money(rows.reduce((sum, row) => sum + row.charges, 0))}</th><th>${money(rows.reduce((sum, row) => sum + row.payments, 0))}</th><th>${money(rows.reduce((sum, row) => sum + row.due, 0))}</th></tr></tfoot></table></section>`;
+  popup.document.write(
+    `<!doctype html><html><head><title>Payment Status Report</title><style>@page{size:A4 landscape;margin:14mm}body{font:12px Arial;color:#203330;margin:0}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:22px}h1{margin:0 0 6px;font-size:24px}p,small{color:#60736d}section{break-inside:avoid;margin:0 0 28px}h2{font-size:16px;margin-bottom:10px}h2 small{float:right;font-weight:normal}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce6e1;text-align:left}thead th{background:#eaf4ef}td:nth-child(n+4),th:nth-child(n+4){text-align:right}tfoot th{background:#f5f7f6}@media print{button{display:none}}</style></head><body><header><h1>${esc(state.settings.name)}</h1><p>Payment Status Report | ${esc(state.settings.term)} | Generated ${esc(new Date().toLocaleDateString("en-GB"))}</p><button onclick="window.print()">Print or save as PDF</button></header>${section("Students with outstanding payments", groups.outstanding)}${section("Students fully paid", groups.paid)}</body></html>`,
+  );
+  popup.document.close();
 }
 $("#role").onchange = (e) => {
   role = e.target.value;
