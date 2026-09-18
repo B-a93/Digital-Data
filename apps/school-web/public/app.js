@@ -1197,7 +1197,18 @@ async function resolvedSession(authResult) {
   return sessionFromResult(await auth.getSession());
 }
 async function authenticatedToken() {
-  const token = await auth.getJWTToken();
+  const response = await fetch("/api/auth/token", {
+      headers: { Accept: "application/json" },
+      credentials: "same-origin",
+    }),
+    data = await response.json().catch(() => ({}));
+  if (!response.ok)
+    throw Error(
+      data.message ||
+        data.error ||
+        `Secure token request failed (${response.status}).`,
+    );
+  const token = data.token;
   if (!token || token.split(".").length !== 3)
     throw Error(
       "The secure login token could not be created. Please sign in again.",
