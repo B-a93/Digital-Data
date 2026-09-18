@@ -76,11 +76,13 @@ async function proxyAuth(req, res, pathname, search) {
   };
   const cookies = upstream.headers.getSetCookie?.() || [];
   if (cookies.length)
-    responseHeaders["Set-Cookie"] = cookies.map((cookie) =>
-      cookie
+    responseHeaders["Set-Cookie"] = cookies.map((originalCookie) => {
+      let cookie = originalCookie
         .replace(/;\s*Domain=[^;]+/gi, "")
-        .replace(/;\s*Path=[^;]+/gi, "; Path=/api/auth"),
-    );
+        .replace(/;\s*Path=[^;]+/gi, "; Path=/api/auth");
+      if (!/;\s*Path=/i.test(cookie)) cookie += "; Path=/api/auth";
+      return cookie;
+    });
   const location = upstream.headers.get("location");
   if (location) responseHeaders.Location = location;
   res.writeHead(upstream.status, responseHeaders);
