@@ -2,7 +2,9 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 
 const authUrl =
   "https://ep-spring-poetry-b2x3am6k.neonauth.c-6.eu-central-1.aws.neon.tech/neondb/auth";
-const jwks = createRemoteJWKSet(new URL(authUrl + "/jwt"));
+const jwks = createRemoteJWKSet(
+  new URL(authUrl + "/.well-known/jwks.json"),
+);
 
 export async function verifyAuthenticatedUser(req) {
   const header = req.headers.authorization || "";
