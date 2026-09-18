@@ -25,6 +25,12 @@ CREATE TABLE IF NOT EXISTS school_onboarding (
   invitation_status text NOT NULL DEFAULT 'pending',
   created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE school_onboarding ADD COLUMN IF NOT EXISTS invitation_token_hash text;
+ALTER TABLE school_onboarding ADD COLUMN IF NOT EXISTS invitation_expires_at timestamptz;
+ALTER TABLE school_onboarding ADD COLUMN IF NOT EXISTS invited_at timestamptz;
+ALTER TABLE school_onboarding ADD COLUMN IF NOT EXISTS accepted_at timestamptz;
+ALTER TABLE school_onboarding ADD COLUMN IF NOT EXISTS auth_user_id text;
+CREATE INDEX IF NOT EXISTS onboarding_token_idx ON school_onboarding(invitation_token_hash);
 
 CREATE TABLE IF NOT EXISTS school_users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
