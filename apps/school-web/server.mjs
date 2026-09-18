@@ -111,6 +111,22 @@ async function emailInvitation(record, invite) {
     expiresAt: invite.expiresAt,
   });
 }
+async function requireSchoolContext(req) {
+  const user = await verifyAuthenticatedUser(req);
+  const result = await query(
+    `SELECT su.school_id,su.role,s.name FROM school_users su
+     JOIN schools s ON s.id=su.school_id
+     WHERE su.auth_user_id=$1 AND s.status='active'
+     ORDER BY su.created_at LIMIT 1`,
+    [user.id],
+  );
+  if (!result.rows[0])
+    throw Object.assign(
+      new Error("This account is not connected to an active school."),
+      { status: 403 },
+    );
+  return { ...user, ...result.rows[0] };
+}
 const server = http.createServer(async (req, res) => {
   try {
     const requestUrl = new URL(req.url, "http://localhost");
@@ -173,6 +189,118 @@ const server = http.createServer(async (req, res) => {
           status: row.status,
         },
       });
+      return;
+    }
+    if (pathname === "/api/school/students") {
+      const context = await requireSchoolContext(req);
+      if (req.method === "GET") {
+        const [students, schoolClasses] = await Promise.all([
+          query(
+            `SELECT st.id,st.student_number,st.full_name,st.status,c.name AS class_name
+             FROM students st LEFT JOIN classes c ON c.id=st.class_id
+             WHERE st.school_id=$1 ORDER BY st.full_name`,
+            [context.school_id],
+          ),
+          query(
+            `SELECT id,name FROM classes WHERE school_id=$1 ORDER BY name`,
+            [context.school_id],
+          ),
+        ]);
+        json(res, 200, {
+          students: students.rows,
+          classes: schoolClasses.rows,
+        });
+        return;
+      }
+      if (req.method === "POST") {
+        const data = await readJsonBody(req),
+          studentNumber = String(data.studentNumber || "")
+            .trim()
+            .toUpperCase(),
+          fullName = String(data.fullName || "").trim(),
+          className = String(data.className || "").trim();
+        if (
+          !/^[A-Z0-9][A-Z0-9\-/]{1,29}$/.test(studentNumber) ||
+          !fullName ||
+          !className
+        ) {
+          json(res, 400, { error: "Enter valid student details." });
+          return;
+        }
+        const student = await transaction(async (client) => {
+          const schoolClass = (
+            await client.query(
+              `INSERT INTO classes(school_id,name) VALUES($1,$2)
+               ON CONFLICT(school_id,name) DO UPDATE SET name=EXCLUDED.name RETURNING id,name`,
+              [context.school_id, className],
+            )
+          ).rows[0];
+          return (
+            await client.query(
+              `INSERT INTO students(school_id,class_id,student_number,full_name)
+               VALUES($1,$2,$3,$4)
+               RETURNING id,student_number,full_name,status`,
+              [context.school_id, schoolClass.id, studentNumber, fullName],
+            )
+          ).rows[0];
+        });
+        json(res, 201, { student });
+        return;
+      }
+      json(res, 405, { error: "Method not allowed" });
+      return;
+    }
+    const studentRoute = pathname.match(
+      /^\/api\/school\/students\/([0-9a-f-]{36})$/,
+    );
+    if (studentRoute) {
+      const context = await requireSchoolContext(req);
+      if (req.method !== "PATCH") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const data = await readJsonBody(req),
+        studentNumber = String(data.studentNumber || "")
+          .trim()
+          .toUpperCase(),
+        fullName = String(data.fullName || "").trim(),
+        className = String(data.className || "").trim();
+      if (
+        !/^[A-Z0-9][A-Z0-9\-/]{1,29}$/.test(studentNumber) ||
+        !fullName ||
+        !className
+      ) {
+        json(res, 400, { error: "Enter valid student details." });
+        return;
+      }
+      const updated = await transaction(async (client) => {
+        const schoolClass = (
+          await client.query(
+            `INSERT INTO classes(school_id,name) VALUES($1,$2)
+             ON CONFLICT(school_id,name) DO UPDATE SET name=EXCLUDED.name RETURNING id`,
+            [context.school_id, className],
+          )
+        ).rows[0];
+        return (
+          await client.query(
+            `UPDATE students SET student_number=$3,full_name=$4,class_id=$5,updated_at=now()
+             WHERE id=$1 AND school_id=$2
+             RETURNING id,student_number,full_name,status`,
+            [
+              studentRoute[1],
+              context.school_id,
+              studentNumber,
+              fullName,
+              schoolClass.id,
+            ],
+          )
+        ).rows[0];
+      });
+      if (!updated) {
+        json(res, 404, { error: "Student not found." });
+        return;
+      }
+      json(res, 200, { student: updated });
       return;
     }
     if (pathname === "/api/platform/schools") {
@@ -376,8 +504,13 @@ const server = http.createServer(async (req, res) => {
         `[api] ${req.method} ${failedPath} failed:`,
         error instanceof Error ? error.message : error,
       );
-      json(res, error.status || 500, {
-        error: error.status ? error.message : "Request failed",
+      const duplicate = error?.code === "23505";
+      json(res, duplicate ? 409 : error.status || 500, {
+        error: duplicate
+          ? "That student or school code is already in use."
+          : error.status
+            ? error.message
+            : "Request failed",
       });
       return;
     }
