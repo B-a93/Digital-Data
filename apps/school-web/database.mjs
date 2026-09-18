@@ -45,6 +45,11 @@ export async function databaseHealth() {
   }
 }
 
+export async function query(text, values=[]) {
+  if (!pool || !ready) throw new Error('Database is unavailable');
+  return pool.query(text, values);
+}
+
 export async function closeDatabase() {
   if (pool) await pool.end();
 }
