@@ -43,6 +43,7 @@ let view = "dashboard",
   editingStudentId = null,
   accessToken = "",
   isPlatformOwner = false,
+  activeSchool = null,
   platformSchools = [];
 let attendanceDraft = null;
 function localDate() {
@@ -909,12 +910,22 @@ function showAuthPanel(id) {
     element.style.display = panel === id ? "block" : "none";
   });
 }
-function showPortal(session) {
+async function showPortal(session) {
   const authScreen = $("#auth-screen"),
     layout = $(".layout"),
     email = session?.user?.email || "";
   accessToken = session?.session?.token || "";
-  isPlatformOwner = email.toLowerCase() === "contact@elegantempireai.com";
+  const response = await fetch("/api/me", {
+    headers: { Authorization: "Bearer " + accessToken },
+  });
+  const account = await response.json();
+  if (!response.ok) throw Error(account.error || "Account access unavailable.");
+  isPlatformOwner = account.user.role === "platform_owner";
+  activeSchool = account.school;
+  if (activeSchool) {
+    state.settings.name = activeSchool.name;
+    state.settings.term = activeSchool.term;
+  }
   authScreen.hidden = true;
   authScreen.style.display = "none";
   layout.hidden = false;
@@ -968,7 +979,7 @@ async function initializeAuth() {
   try {
     const session = sessionFromResult(await auth.getSession());
     if (session?.user) {
-      showPortal(session);
+      await showPortal(session);
       return;
     }
   } catch {}
@@ -992,7 +1003,7 @@ $("#login-form").onsubmit = async (e) => {
     if (!session?.user) throw Error("The session could not be created.");
     const inviteToken = new URLSearchParams(location.search).get("invite");
     if (inviteToken) await acceptInvitation(inviteToken, session);
-    else showPortal(session);
+    else await showPortal(session);
   } catch (err) {
     showLogin(
       err?.message || "Unable to sign in. Check your email and password.",
@@ -1014,7 +1025,7 @@ async function acceptInvitation(token, session) {
   if (!response.ok)
     throw Error(data.error || "Unable to activate this school.");
   history.replaceState({}, "", location.pathname);
-  showPortal(session);
+  await showPortal(session);
   toast("School portal activated successfully.");
 }
 $("#invitation-form").onsubmit = async (e) => {
