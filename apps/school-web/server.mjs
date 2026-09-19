@@ -209,7 +209,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const membership = await query(
-        `SELECT su.role,s.id,s.name,s.slug,s.current_term,s.pass_mark,s.status
+        `SELECT su.role,s.id,s.name,s.slug,s.current_term,s.pass_mark,s.grade_scale,s.status
          FROM school_users su JOIN schools s ON s.id=su.school_id
          WHERE su.auth_user_id=$1 AND s.status='active'
          ORDER BY su.created_at LIMIT 1`,
@@ -230,6 +230,7 @@ const server = http.createServer(async (req, res) => {
           slug: row.slug,
           term: row.current_term,
           passMark: Number(row.pass_mark),
+          gradeScale: row.grade_scale,
           status: row.status,
         },
       });
@@ -670,7 +671,12 @@ const server = http.createServer(async (req, res) => {
       const data = await readJsonBody(req),
         name = String(data.name || "").trim(),
         term = String(data.term || "").trim(),
-        passMark = Number(data.passMark);
+        passMark = Number(data.passMark),
+        gradeScale = {
+          A: Number(data.gradeScale?.A),
+          B: Number(data.gradeScale?.B),
+          C: Number(data.gradeScale?.C),
+        };
       if (
         !name ||
         name.length > 100 ||
@@ -678,16 +684,23 @@ const server = http.createServer(async (req, res) => {
         term.length > 60 ||
         !Number.isFinite(passMark) ||
         passMark < 0 ||
-        passMark > 100
+        passMark > 100 ||
+        !Number.isFinite(gradeScale.A) ||
+        !Number.isFinite(gradeScale.B) ||
+        !Number.isFinite(gradeScale.C) ||
+        gradeScale.A > 100 ||
+        gradeScale.A <= gradeScale.B ||
+        gradeScale.B <= gradeScale.C ||
+        gradeScale.C < passMark
       ) {
         json(res, 400, { error: "Enter valid school settings." });
         return;
       }
       const settings = (
         await query(
-          `UPDATE schools SET name=$2,current_term=$3,pass_mark=$4,updated_at=now()
-           WHERE id=$1 RETURNING id,name,current_term,pass_mark`,
-          [context.school_id, name, term, passMark],
+          `UPDATE schools SET name=$2,current_term=$3,pass_mark=$4,grade_scale=$5,updated_at=now()
+           WHERE id=$1 RETURNING id,name,current_term,pass_mark,grade_scale`,
+          [context.school_id, name, term, passMark, gradeScale],
         )
       ).rows[0];
       await recordAudit(
@@ -699,6 +712,7 @@ const server = http.createServer(async (req, res) => {
           name,
           term,
           passMark,
+          gradeScale,
         },
       );
       json(res, 200, { settings });
