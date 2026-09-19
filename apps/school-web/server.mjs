@@ -589,8 +589,28 @@ const server = http.createServer(async (req, res) => {
         json(res, 405, { error: "Method not allowed" });
         return;
       }
-      const data = await readJsonBody(req),
-        studentNumber = String(data.studentNumber || "")
+      const data = await readJsonBody(req);
+      if (data.status !== undefined) {
+        const status = String(data.status).toLowerCase();
+        if (!["active", "inactive", "graduated"].includes(status)) {
+          json(res, 400, { error: "Choose a valid student status." });
+          return;
+        }
+        const student = (
+          await query(
+            `UPDATE students SET status=$3,updated_at=now() WHERE id=$1 AND school_id=$2
+             RETURNING id,student_number,full_name,status`,
+            [studentRoute[1], context.school_id, status],
+          )
+        ).rows[0];
+        if (!student) {
+          json(res, 404, { error: "Student not found." });
+          return;
+        }
+        json(res, 200, { student });
+        return;
+      }
+      const studentNumber = String(data.studentNumber || "")
           .trim()
           .toUpperCase(),
         fullName = String(data.fullName || "").trim(),
@@ -781,7 +801,7 @@ const server = http.createServer(async (req, res) => {
           `SELECT st.id AS student_id,a.status,a.recorded_at
            FROM students st JOIN classes c ON c.id=st.class_id
            LEFT JOIN attendance a ON a.student_id=st.id AND a.attendance_date=$3
-           WHERE st.school_id=$1 AND c.name=$2 ORDER BY st.full_name`,
+           WHERE st.school_id=$1 AND c.name=$2 AND st.status='active' ORDER BY st.full_name`,
           [context.school_id, className, attendanceDate],
         );
         json(res, 200, {
@@ -815,7 +835,7 @@ const server = http.createServer(async (req, res) => {
           const students = (
             await client.query(
               `SELECT st.id FROM students st JOIN classes c ON c.id=st.class_id
-               WHERE st.school_id=$1 AND c.name=$2`,
+               WHERE st.school_id=$1 AND c.name=$2 AND st.status='active'`,
               [context.school_id, selectedClass],
             )
           ).rows;
@@ -906,7 +926,7 @@ const server = http.createServer(async (req, res) => {
             throw Object.assign(new Error("Class not found."), { status: 404 });
           const students = (
             await client.query(
-              `SELECT id FROM students WHERE school_id=$1 AND class_id=$2 ORDER BY id`,
+              `SELECT id FROM students WHERE school_id=$1 AND class_id=$2 AND status='active' ORDER BY id`,
               [context.school_id, schoolClass.id],
             )
           ).rows;
