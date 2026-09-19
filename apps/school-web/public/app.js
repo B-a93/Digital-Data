@@ -492,7 +492,7 @@ function staff() {
       "Staff management",
       "Invite teachers and finance staff to this school workspace.",
     ) +
-    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>Invite a staff member</h2><span class="badge gray">Administrator only</span></div><form id="staff-form"><div class="form-grid"><div class="field"><label for="staff-name">Full name</label><input id="staff-name" name="fullName" maxlength="100" required></div><div class="field"><label for="staff-email">Email address</label><input id="staff-email" name="email" type="email" required></div><div class="field"><label for="staff-role">Role</label><select id="staff-role" name="role"><option value="teacher">Teacher</option><option value="finance">Finance</option></select></div></div><div class="form-actions"><button class="button">Send invitation</button><span class="status-text">Personal email addresses can be used.</span></div><div id="staff-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Invited staff</h2><small>${schoolStaff.length} staff</small></div>${table(["Staff member", "Role", "Status", "Invited"], schoolStaff.map((member) => `<tr><td><span class="student-name">${esc(member.full_name)}</span><span class="sub">${esc(member.email)}</span></td><td>${esc(member.role === "finance" ? "Finance" : "Teacher")}</td><td><span class="badge ${member.invitation_status === "accepted" ? "" : "amber"}">${esc(member.invitation_status)}</span></td><td>${esc(new Date(member.invited_at).toLocaleDateString("en-GB"))}</td></tr>`).join(""))}</section></div>`
+    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>Invite a staff member</h2><span class="badge gray">Administrator only</span></div><form id="staff-form"><div class="form-grid"><div class="field"><label for="staff-name">Full name</label><input id="staff-name" name="fullName" maxlength="100" required></div><div class="field"><label for="staff-email">Email address</label><input id="staff-email" name="email" type="email" required></div><div class="field"><label for="staff-role">Role</label><select id="staff-role" name="role"><option value="teacher">Teacher</option><option value="finance">Finance</option></select></div></div><div class="form-actions"><button class="button">Send invitation</button><span class="status-text">Personal email addresses can be used.</span></div><div id="staff-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Staff access</h2><small>${schoolStaff.length} staff</small></div>${table(["Staff member", "Role", "Status", "Invited", "Actions"], schoolStaff.map((member) => `<tr><td><span class="student-name">${esc(member.full_name)}</span><span class="sub">${esc(member.email)}</span></td><td><select class="staff-role-select" data-id="${esc(member.id)}" aria-label="Role for ${esc(member.full_name)}"><option value="teacher" ${member.role === "teacher" ? "selected" : ""}>Teacher</option><option value="finance" ${member.role === "finance" ? "selected" : ""}>Finance</option></select></td><td><span class="badge ${member.invitation_status === "accepted" ? "" : "amber"}">${esc(member.invitation_status)}</span></td><td>${esc(new Date(member.invited_at).toLocaleDateString("en-GB"))}</td><td><div class="quick-actions">${member.invitation_status !== "accepted" ? `<button class="text-button resend-staff" data-id="${esc(member.id)}">Resend</button>` : ""}<button class="text-button revoke-staff" data-id="${esc(member.id)}" data-name="${esc(member.full_name)}">${member.invitation_status === "accepted" ? "Deactivate" : "Cancel"}</button></div></td></tr>`).join(""))}</section></div>`
   );
 }
 function settings() {
@@ -1142,6 +1142,58 @@ function wire() {
         button.disabled = false;
       }
     };
+    document.querySelectorAll(".staff-role-select").forEach(
+      (select) =>
+        (select.onchange = async () => {
+          try {
+            await schoolApi(`/api/school/staff/${select.dataset.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ role: select.value }),
+            });
+            await loadSchoolStaff();
+            render();
+            toast("Staff role updated.");
+          } catch (err) {
+            toast(err.message);
+            await loadSchoolStaff();
+            render();
+          }
+        }),
+    );
+    document.querySelectorAll(".resend-staff").forEach(
+      (button) =>
+        (button.onclick = async () => {
+          button.disabled = true;
+          try {
+            await schoolApi(`/api/school/staff/${button.dataset.id}/resend`, {
+              method: "POST",
+            });
+            await loadSchoolStaff();
+            render();
+            toast("Staff invitation sent again.");
+          } catch (err) {
+            toast(err.message);
+            button.disabled = false;
+          }
+        }),
+    );
+    document.querySelectorAll(".revoke-staff").forEach(
+      (button) =>
+        (button.onclick = async () => {
+          if (!confirm(`Remove portal access for ${button.dataset.name}?`))
+            return;
+          try {
+            await schoolApi(`/api/school/staff/${button.dataset.id}`, {
+              method: "DELETE",
+            });
+            await loadSchoolStaff();
+            render();
+            toast("Staff access removed.");
+          } catch (err) {
+            toast(err.message);
+          }
+        }),
+    );
   }
 }
 function download(type) {
