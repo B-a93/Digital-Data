@@ -43,6 +43,8 @@ let view = "dashboard",
   search = "",
   studentClass = "",
   studentStatus = "active",
+  promotionFrom = state.settings.classes[0],
+  promotionTo = state.settings.classes[1] || state.settings.classes[0],
   operation = crypto.randomUUID(),
   role = "Administrator",
   editingStudentId = null,
@@ -304,6 +306,11 @@ async function loadSchoolStudents() {
   state.remarks = {};
   state.published = [];
   selectedClass = state.settings.classes[0];
+  if (!schoolClasses().includes(promotionFrom))
+    promotionFrom = schoolClasses()[0];
+  if (!schoolClasses().includes(promotionTo) || promotionTo === promotionFrom)
+    promotionTo =
+      schoolClasses().find((name) => name !== promotionFrom) || promotionFrom;
   schoolDataLive = true;
 }
 async function loadSchoolFinance() {
@@ -479,6 +486,12 @@ function dashboard() {
         "",
       )}</div><p class="note">Demo view changes these shortcuts only. It does not enforce permissions.</p></section></div>`
   );
+}
+function promotionPanel() {
+  const promotionStudents = activeStudents().filter(
+    (student) => student.class === promotionFrom,
+  );
+  return `<section class="panel" id="promotion-panel"><div class="panel-heading"><div><h2>Promote students</h2><p>Move selected active students to their next class without losing their records.</p></div><span class="badge gray">Administrator only</span></div><form id="promotion-form"><div class="toolbar"><label for="promotion-from">Current class</label><select id="promotion-from">${options(schoolClasses(), promotionFrom)}</select><label for="promotion-to">Next class</label><select id="promotion-to">${options(schoolClasses(), promotionTo)}</select><button type="button" class="text-button" id="promotion-select-all">Select all</button></div>${table(["Select", "Student", "Current class"], promotionStudents.map((student) => `<tr><td><input type="checkbox" class="promotion-student" value="${esc(student.id)}" aria-label="Select ${esc(student.name)}"></td><td>${studentCell(student)}</td><td>${esc(student.class)}</td></tr>`).join(""))}<div class="form-actions"><button type="submit" class="button" ${schoolClasses().length < 2 || !promotionStudents.length ? "disabled" : ""}>Promote selected students</button><span class="status-text">Only active students in the current class can be promoted.</span></div><div id="promotion-error" class="error" role="alert"></div></form></section>`;
 }
 function students() {
   const list = state.students.filter(
@@ -893,6 +906,7 @@ function activityDescription(item) {
       "student.updated": `Updated ${details.fullName || "a student"}`,
       "student.status_changed": `Changed student status to ${details.status || "unknown"}`,
       "students.imported": `Imported ${details.count || 0} students`,
+      "students.promoted": `Promoted ${details.count || 0} students from ${details.fromClass || "a class"} to ${details.toClass || "another class"}`,
       "payment.recorded": `Recorded payment ${details.receiptNumber || ""} for ${money(Number(details.amountBututs || 0))}`,
       "charge.created": `Added ${details.description || "fee"} charge of ${money(Number(details.amountBututs || 0))}`,
       "class_charge.created": `Charged ${details.students || 0} students in ${details.className || "a class"}`,
@@ -1003,6 +1017,76 @@ function wire() {
     );
   }
   if (view === "students") {
+    $("#student-import-panel").insertAdjacentHTML("afterend", promotionPanel());
+    $("#promotion-from").onchange = (e) => {
+      promotionFrom = e.target.value;
+      if (promotionTo === promotionFrom)
+        promotionTo =
+          schoolClasses().find((name) => name !== promotionFrom) ||
+          promotionFrom;
+      render();
+    };
+    $("#promotion-to").onchange = (e) => {
+      promotionTo = e.target.value;
+    };
+    $("#promotion-select-all").onclick = () => {
+      const boxes = [...document.querySelectorAll(".promotion-student")],
+        select = boxes.some((box) => !box.checked);
+      boxes.forEach((box) => (box.checked = select));
+      $("#promotion-select-all").textContent = select
+        ? "Clear selection"
+        : "Select all";
+    };
+    $("#promotion-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const studentIds = [
+        ...document.querySelectorAll(".promotion-student:checked"),
+      ].map((input) => input.value);
+      if (promotionFrom === promotionTo) {
+        $("#promotion-error").textContent =
+          "Choose a different destination class.";
+        return;
+      }
+      if (!studentIds.length) {
+        $("#promotion-error").textContent =
+          "Select at least one student to promote.";
+        return;
+      }
+      if (
+        !confirm(
+          `Move ${studentIds.length} selected student${studentIds.length === 1 ? "" : "s"} from ${promotionFrom} to ${promotionTo}?`,
+        )
+      )
+        return;
+      const button = e.target.querySelector("button[type=submit]");
+      button.disabled = true;
+      try {
+        if (schoolDataLive) {
+          const result = await schoolApi("/api/school/students/promote", {
+            method: "POST",
+            body: JSON.stringify({
+              fromClass: promotionFrom,
+              toClass: promotionTo,
+              studentIds,
+            }),
+          });
+          await loadSchoolStudents();
+          await loadSchoolFinance();
+          render();
+          toast(`${result.promoted} students promoted successfully.`);
+          return;
+        }
+        state.students
+          .filter((student) => studentIds.includes(student.id))
+          .forEach((student) => (student.class = promotionTo));
+        save();
+        render();
+        toast(`${studentIds.length} demo students promoted.`);
+      } catch (err) {
+        $("#promotion-error").textContent = err.message;
+        button.disabled = false;
+      }
+    };
     $("#student-form .form-grid").insertAdjacentHTML(
       "beforeend",
       `<div class="field"><label for="guardian-name">Parent or guardian name</label><input id="guardian-name" name="guardianName" maxlength="100" value="${esc(state.students.find((student) => student.id === editingStudentId)?.guardianName || "")}" placeholder="Optional"></div><div class="field"><label for="guardian-phone">Parent or guardian phone</label><input id="guardian-phone" name="guardianPhone" type="tel" maxlength="40" value="${esc(state.students.find((student) => student.id === editingStudentId)?.guardianPhone || "")}" placeholder="Optional"></div>`,
@@ -1209,6 +1293,7 @@ function wire() {
     if (schoolDataLive && role !== "Administrator") {
       $("#student-form").closest("section").hidden = true;
       $("#student-import-panel").hidden = true;
+      $("#promotion-panel").hidden = true;
       document
         .querySelectorAll(".edit-student,.student-status-action")
         .forEach((button) => (button.hidden = true));
