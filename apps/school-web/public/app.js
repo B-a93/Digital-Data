@@ -46,6 +46,9 @@ let view = "dashboard",
   studentStatus = "active",
   promotionFrom = state.settings.classes[0],
   promotionTo = state.settings.classes[1] || state.settings.classes[0],
+  communicationClass = "",
+  communicationTemplate = "announcement",
+  communicationMessage = "",
   operation = crypto.randomUUID(),
   role = "Administrator",
   editingStudentId = null,
@@ -121,6 +124,7 @@ const navItems = [
   ["attendance", "✓", "Attendance"],
   ["fees", "◈", "Fees & payments"],
   ["results", "▤", "Results"],
+  ["communications", "✉", "Parent messages"],
   ["reports", "↗", "Reports"],
   ["staff", "♧", "Staff"],
   ["activity", "◷", "Activity"],
@@ -133,7 +137,13 @@ const visibleNav = () =>
       ? navItems
       : role === "Teacher"
         ? navItems.filter(([id]) =>
-            ["dashboard", "students", "attendance", "results"].includes(id),
+            [
+              "dashboard",
+              "students",
+              "attendance",
+              "results",
+              "communications",
+            ].includes(id),
           )
         : navItems.filter(([id]) =>
             ["dashboard", "students", "fees", "reports"].includes(id),
@@ -236,6 +246,7 @@ function render() {
     fees,
     results,
     reports,
+    communications,
     staff,
     activity,
     settings,
@@ -692,6 +703,63 @@ function openWhatsAppReminder(studentId) {
     message = `Hello${guardian}, this is a fee reminder from ${state.settings.name}. ${student.name} (${student.admission}) has an outstanding school balance of ${money(outstanding)} for ${state.settings.term}. Please contact the school if you need any clarification. Thank you.`;
   window.open(
     `https://wa.me/${encodeURIComponent(phone)}?text=${encodeURIComponent(message)}`,
+    "_blank",
+    "noopener,noreferrer",
+  );
+}
+function whatsappPhone(value) {
+  let phone = String(value || "").replace(/\D/g, "");
+  if (phone.startsWith("00")) phone = phone.slice(2);
+  if (phone.length === 7) phone = "220" + phone;
+  return phone.length >= 10 ? phone : "";
+}
+function suggestedParentMessage(template) {
+  return (
+    {
+      announcement:
+        "We have an important school announcement for you. Please contact the school if you need any clarification.",
+      attendance:
+        "We are contacting you regarding your child’s attendance. Please contact the school so we can discuss it together.",
+      results:
+        "Your child’s results are now available. Please contact the school to arrange collection or discuss the results.",
+      meeting:
+        "You are invited to a parent or guardian meeting. Please contact the school to confirm your availability.",
+    }[template] || ""
+  );
+}
+function communications() {
+  const recipients = activeStudents().filter(
+      (student) => !communicationClass || student.class === communicationClass,
+    ),
+    withPhone = recipients.filter((student) =>
+      whatsappPhone(student.guardianPhone),
+    );
+  if (!communicationMessage)
+    communicationMessage = suggestedParentMessage(communicationTemplate);
+  return (
+    heading(
+      "Parent & guardian messages",
+      "Prepare personalized WhatsApp drafts using guardian phone numbers in the student register.",
+    ) +
+    `<div class="stack"><section class="panel"><div class="panel-heading"><div><h2>Prepare a message</h2><p>Messages open in WhatsApp for review. The portal does not send them automatically.</p></div><span class="badge gray">${withPhone.length} reachable</span></div><div class="form-grid"><div class="field"><label for="communication-class">Class</label><select id="communication-class"><option value="">All classes</option>${options(schoolClasses(), communicationClass)}</select></div><div class="field"><label for="communication-template">Message type</label><select id="communication-template"><option value="announcement" ${communicationTemplate === "announcement" ? "selected" : ""}>School announcement</option><option value="attendance" ${communicationTemplate === "attendance" ? "selected" : ""}>Attendance follow-up</option><option value="results" ${communicationTemplate === "results" ? "selected" : ""}>Results available</option><option value="meeting" ${communicationTemplate === "meeting" ? "selected" : ""}>Parent meeting</option></select></div></div><div class="field"><label for="communication-message">Message</label><textarea id="communication-message" rows="5" maxlength="800">${esc(communicationMessage)}</textarea></div><div class="note">Review every draft in WhatsApp before sending. Guardian details and messages are not shared with other parents.</div></section><section class="panel"><div class="panel-heading"><h2>Guardian contact list</h2><small>${recipients.length} active students</small></div>${table(["Student", "Class", "Guardian", "WhatsApp"], recipients.map((student) => `<tr><td>${studentCell(student)}</td><td>${esc(student.class)}</td><td>${esc(student.guardianName || "Not recorded")}<span class="sub">${esc(student.guardianPhone || "No phone number")}</span></td><td>${whatsappPhone(student.guardianPhone) ? `<button class="text-button guardian-whatsapp" data-id="${esc(student.id)}">Open message</button>` : '<span class="status-text">Add phone number</span>'}</td></tr>`).join(""))}</section></div>`
+  );
+}
+function openGuardianWhatsApp(studentId) {
+  const student = state.students.find((item) => item.id === studentId),
+    phone = whatsappPhone(student?.guardianPhone),
+    message = communicationMessage.trim();
+  if (!student || !phone) {
+    toast("Add a valid guardian phone number first.");
+    return;
+  }
+  if (!message) {
+    toast("Write a message before opening WhatsApp.");
+    return;
+  }
+  const guardian = student.guardianName || "Parent/Guardian",
+    personalized = `Hello ${guardian}, ${message}\n\nStudent: ${student.name} (${student.admission})\nClass: ${student.class}\n— ${state.settings.name}`;
+  window.open(
+    `https://wa.me/${phone}?text=${encodeURIComponent(personalized)}`,
     "_blank",
     "noopener,noreferrer",
   );
@@ -1721,6 +1789,28 @@ function wire() {
         $("#publish").disabled = false;
       }
     };
+  }
+  if (view === "communications") {
+    $("#communication-class").onchange = (e) => {
+      communicationClass = e.target.value;
+      communicationMessage = $("#communication-message").value;
+      render();
+    };
+    $("#communication-template").onchange = (e) => {
+      communicationTemplate = e.target.value;
+      communicationMessage = suggestedParentMessage(communicationTemplate);
+      render();
+    };
+    $("#communication-message").oninput = (e) => {
+      communicationMessage = e.target.value;
+    };
+    document.querySelectorAll(".guardian-whatsapp").forEach(
+      (button) =>
+        (button.onclick = () => {
+          communicationMessage = $("#communication-message").value;
+          openGuardianWhatsApp(button.dataset.id);
+        }),
+    );
   }
   if (view === "reports") {
     document
