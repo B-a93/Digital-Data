@@ -12,6 +12,26 @@ import { createAuthClient } from "@neondatabase/auth";
 const auth = createAuthClient(location.origin + "/api/auth");
 const $ = (s) => document.querySelector(s),
   key = "digital-data-school-demo-v1";
+let deferredInstallPrompt = null;
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/service-worker.js").catch(() => {});
+  });
+}
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  const button = $("#install-app");
+  if (button) button.hidden = false;
+});
+
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  const button = $("#install-app");
+  if (button) button.hidden = true;
+});
 let state;
 let storageWarning = false;
 try {
@@ -109,6 +129,13 @@ function toast(message) {
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => $("#toast").classList.remove("visible"), 5000);
 }
+$("#install-app").onclick = async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  $("#install-app").hidden = true;
+};
 function save() {
   try {
     localStorage.setItem(key, JSON.stringify(state));
