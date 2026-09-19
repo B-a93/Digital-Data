@@ -1407,6 +1407,26 @@ const server = http.createServer(async (req, res) => {
       json(res, 405, { error: "Method not allowed" });
       return;
     }
+    if (pathname === "/api/school/result-terms") {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator", "teacher");
+      if (req.method !== "GET") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const result = await query(
+        `SELECT term FROM (
+           SELECT current_term AS term,updated_at AS recorded_at FROM schools WHERE id=$1
+           UNION ALL
+           SELECT term,MAX(published_at) AS recorded_at FROM assessments
+           WHERE school_id=$1 AND published_at IS NOT NULL GROUP BY term
+         ) terms WHERE term IS NOT NULL AND term<>''
+         GROUP BY term ORDER BY MAX(recorded_at) DESC`,
+        [context.school_id],
+      );
+      json(res, 200, { terms: result.rows.map((row) => row.term) });
+      return;
+    }
     if (pathname === "/api/school/report-cards") {
       const context = await requireSchoolContext(req);
       requireRole(context, "administrator", "teacher");
@@ -1440,8 +1460,9 @@ const server = http.createServer(async (req, res) => {
                AND a.published_at IS NOT NULL
              ORDER BY COALESCE(su.name,'General'),a.published_at DESC
            )
-           SELECT am.student_id,l.subject_name,am.score,l.maximum_score,COALESCE(am.remark,'') AS remark
+           SELECT am.student_id,st.student_number,st.full_name,l.subject_name,am.score,l.maximum_score,COALESCE(am.remark,'') AS remark
            FROM latest l JOIN assessment_marks am ON am.assessment_id=l.id
+           JOIN students st ON st.id=am.student_id
            ORDER BY l.subject_name`,
           [context.school_id, className, term],
         );
