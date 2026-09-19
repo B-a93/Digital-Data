@@ -90,6 +90,9 @@ CREATE TABLE IF NOT EXISTS students (
   UNIQUE (school_id, student_number)
 );
 
+ALTER TABLE students ADD COLUMN IF NOT EXISTS guardian_name text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS guardian_phone text;
+
 CREATE TABLE IF NOT EXISTS attendance (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
