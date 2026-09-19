@@ -454,6 +454,90 @@ const server = http.createServer(async (req, res) => {
       json(res, 405, { error: "Method not allowed" });
       return;
     }
+    if (pathname === "/api/school/students/import") {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method !== "POST") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const data = await readJsonBody(req),
+        rows = Array.isArray(data.students) ? data.students : [];
+      if (!rows.length || rows.length > 1000) {
+        json(res, 400, {
+          error: "Import between 1 and 1,000 students at a time.",
+        });
+        return;
+      }
+      const prepared = rows.map((row, index) => ({
+        row: index + 2,
+        studentNumber: String(row.studentNumber || "")
+          .trim()
+          .toUpperCase(),
+        fullName: String(row.fullName || "").trim(),
+        className: String(row.className || "").trim(),
+      }));
+      const invalid = prepared.filter(
+        (row) =>
+          !/^[A-Z0-9][A-Z0-9\-/]{1,29}$/.test(row.studentNumber) ||
+          !row.fullName ||
+          row.fullName.length > 100 ||
+          !row.className ||
+          row.className.length > 60,
+      );
+      const seen = new Set(),
+        duplicateRows = prepared.filter((row) => {
+          if (seen.has(row.studentNumber)) return true;
+          seen.add(row.studentNumber);
+          return false;
+        });
+      if (invalid.length || duplicateRows.length) {
+        const badRows = [
+          ...new Set([...invalid, ...duplicateRows].map((row) => row.row)),
+        ];
+        json(res, 400, {
+          error: `Correct CSV row${badRows.length === 1 ? "" : "s"} ${badRows.join(", ")} and try again.`,
+        });
+        return;
+      }
+      const existing = await query(
+        `SELECT student_number FROM students WHERE school_id=$1 AND student_number=ANY($2::text[])`,
+        [context.school_id, prepared.map((row) => row.studentNumber)],
+      );
+      if (existing.rows.length) {
+        json(res, 409, {
+          error: `Already registered: ${existing.rows.map((row) => row.student_number).join(", ")}. Remove them from the CSV and try again.`,
+        });
+        return;
+      }
+      await transaction(async (client) => {
+        const classIds = new Map();
+        for (const row of prepared) {
+          if (!classIds.has(row.className)) {
+            const schoolClass = (
+              await client.query(
+                `INSERT INTO classes(school_id,name) VALUES($1,$2)
+                 ON CONFLICT(school_id,name) DO UPDATE SET name=EXCLUDED.name RETURNING id`,
+                [context.school_id, row.className],
+              )
+            ).rows[0];
+            classIds.set(row.className, schoolClass.id);
+          }
+          await client.query(
+            `INSERT INTO students(school_id,class_id,student_number,full_name)
+             VALUES($1,$2,$3,$4)`,
+            [
+              context.school_id,
+              classIds.get(row.className),
+              row.studentNumber,
+              row.fullName,
+            ],
+          );
+        }
+      });
+      json(res, 201, { imported: prepared.length });
+      return;
+    }
     if (pathname === "/api/school/settings") {
       const context = await requireSchoolContext(req);
       requireRole(context, "administrator");
