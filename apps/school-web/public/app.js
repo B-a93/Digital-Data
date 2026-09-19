@@ -133,6 +133,45 @@ function badge(n) {
       ? '<span class="badge">Credit</span>'
       : '<span class="badge">Paid</span>';
 }
+function parseCsvText(text) {
+  const rows = [];
+  let row = [],
+    value = "",
+    quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (character === '"' && quoted && text[index + 1] === '"') {
+      value += '"';
+      index += 1;
+    } else if (character === '"') quoted = !quoted;
+    else if (character === "," && !quoted) {
+      row.push(value.trim());
+      value = "";
+    } else if ((character === "\n" || character === "\r") && !quoted) {
+      if (character === "\r" && text[index + 1] === "\n") index += 1;
+      row.push(value.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      value = "";
+    } else value += character;
+  }
+  row.push(value.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows;
+}
+function downloadStudentTemplate() {
+  const content = csv([
+      ["Student number", "Full name", "Class"],
+      ["STU-2026-001", "Example Student", "Grade 7 A"],
+    ]),
+    blob = new Blob(["\ufeff" + content], { type: "text/csv;charset=utf-8" }),
+    url = URL.createObjectURL(blob),
+    anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "student-import-template.csv";
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 function navigate(next) {
   if (
     attendanceDraft &&
@@ -400,7 +439,7 @@ function students() {
       "Students",
       "Keep a clear register of enrolment and class assignments.",
     ) +
-    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>${editing ? "Edit student" : schoolDataLive ? "Register a student" : "Register a fictional student"}</h2><span class="badge gray">${schoolDataLive ? "Neon record" : "Demo record"}</span></div><form id="student-form"><div class="form-grid"><div class="field"><label for="student-number">Student number</label><input id="student-number" name="studentNumber" maxlength="30" required autocomplete="off" placeholder="e.g. STU-2026-001" value="${esc(editing?.admission || "")}"></div><div class="field"><label for="name">Student full name</label><input id="name" name="name" maxlength="80" required placeholder="e.g. Awa Example" value="${esc(editing?.name || "")}"></div><div class="field"><label for="new-class">Class</label><select id="new-class" name="class">${options(schoolClasses(), editing?.class || schoolClasses()[0])}</select></div></div><div class="form-actions"><button class="button">${editing ? "Save changes" : "Add student"}</button>${editing ? '<button type="button" class="button secondary" id="cancel-edit">Cancel</button>' : ""}<span class="status-text">Each student number must be unique within this school.</span></div><div class="error" id="form-error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Student register</h2><small>${list.length} students</small></div><div class="toolbar"><input id="search" type="search" aria-label="Search students" value="${esc(search)}" placeholder="Search name or student number"><select id="student-class" aria-label="Filter students by class"><option value="">All classes</option>${options(schoolClasses(), studentClass)}</select><select id="student-status" aria-label="Filter students by status"><option value="">All statuses</option>${options(["active", "inactive", "graduated"], studentStatus)}</select></div>${table(["Student", "Class", "Status", "Balance", "Action"], list.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td><span class="badge ${(s.status || "active") === "active" ? "" : "gray"}">${esc(s.status || "active")}</span></td><td>${money(balance(state, s.id))}</td><td><button class="text-button edit-student" data-id="${s.id}">Edit</button> · <button class="text-button student-status-action" data-id="${s.id}" data-status="${(s.status || "active") === "active" ? "inactive" : "active"}">${(s.status || "active") === "active" ? "Deactivate" : "Reactivate"}</button>${(s.status || "active") === "active" ? ` · <button class="text-button student-status-action" data-id="${s.id}" data-status="graduated">Graduate</button>` : ""}</td></tr>`).join(""))}</section></div>`
+    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>${editing ? "Edit student" : schoolDataLive ? "Register a student" : "Register a fictional student"}</h2><span class="badge gray">${schoolDataLive ? "Neon record" : "Demo record"}</span></div><form id="student-form"><div class="form-grid"><div class="field"><label for="student-number">Student number</label><input id="student-number" name="studentNumber" maxlength="30" required autocomplete="off" placeholder="e.g. STU-2026-001" value="${esc(editing?.admission || "")}"></div><div class="field"><label for="name">Student full name</label><input id="name" name="name" maxlength="80" required placeholder="e.g. Awa Example" value="${esc(editing?.name || "")}"></div><div class="field"><label for="new-class">Class</label><select id="new-class" name="class">${options(schoolClasses(), editing?.class || schoolClasses()[0])}</select></div></div><div class="form-actions"><button class="button">${editing ? "Save changes" : "Add student"}</button>${editing ? '<button type="button" class="button secondary" id="cancel-edit">Cancel</button>' : ""}<span class="status-text">Each student number must be unique within this school.</span></div><div class="error" id="form-error" role="alert"></div></form></section><section class="panel" id="student-import-panel"><div class="panel-heading"><div><h2>Import students from Excel</h2><p>Download the CSV template, complete it in Excel, then upload the saved CSV file.</p></div></div><form id="student-import-form"><div class="form-grid"><div class="field"><label for="student-import-file">Completed CSV file</label><input id="student-import-file" name="file" type="file" accept=".csv,text/csv" required></div></div><div class="form-actions"><button type="button" class="button secondary" id="student-template">Download template</button><button class="button">Import students</button><span class="status-text">Maximum 1,000 students per file.</span></div><div id="student-import-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Student register</h2><small>${list.length} students</small></div><div class="toolbar"><input id="search" type="search" aria-label="Search students" value="${esc(search)}" placeholder="Search name or student number"><select id="student-class" aria-label="Filter students by class"><option value="">All classes</option>${options(schoolClasses(), studentClass)}</select><select id="student-status" aria-label="Filter students by status"><option value="">All statuses</option>${options(["active", "inactive", "graduated"], studentStatus)}</select></div>${table(["Student", "Class", "Status", "Balance", "Action"], list.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td><span class="badge ${(s.status || "active") === "active" ? "" : "gray"}">${esc(s.status || "active")}</span></td><td>${money(balance(state, s.id))}</td><td><button class="text-button edit-student" data-id="${s.id}">Edit</button> · <button class="text-button student-status-action" data-id="${s.id}" data-status="${(s.status || "active") === "active" ? "inactive" : "active"}">${(s.status || "active") === "active" ? "Deactivate" : "Reactivate"}</button>${(s.status || "active") === "active" ? ` · <button class="text-button student-status-action" data-id="${s.id}" data-status="graduated">Graduate</button>` : ""}</td></tr>`).join(""))}</section></div>`
   );
 }
 function attendance() {
@@ -661,6 +700,61 @@ function wire() {
           : "Fictional student added. No fee charge created automatically.",
       );
     };
+    $("#student-template").onclick = downloadStudentTemplate;
+    $("#student-import-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const button = e.target.querySelector("button[type=submit]"),
+        error = $("#student-import-error"),
+        file = new FormData(e.target).get("file");
+      error.textContent = "";
+      button.disabled = true;
+      try {
+        const rows = parseCsvText(await file.text());
+        if (rows.length < 2)
+          throw Error("The CSV file does not contain student rows.");
+        const headers = rows[0].map((value) =>
+          value.replace(/^\ufeff/, "").toLowerCase(),
+        );
+        if (
+          headers[0] !== "student number" ||
+          headers[1] !== "full name" ||
+          headers[2] !== "class"
+        )
+          throw Error(
+            "Use the template columns: Student number, Full name, Class.",
+          );
+        const importedStudents = rows.slice(1).map((row) => ({
+          studentNumber: row[0] || "",
+          fullName: row[1] || "",
+          className: row[2] || "",
+        }));
+        if (schoolDataLive) {
+          const result = await schoolApi("/api/school/students/import", {
+            method: "POST",
+            body: JSON.stringify({ students: importedStudents }),
+          });
+          await loadSchoolStudents();
+          await loadSchoolFinance();
+          render();
+          toast(`${result.imported} students imported successfully.`);
+        } else {
+          for (const student of importedStudents)
+            state.students.push({
+              id: crypto.randomUUID(),
+              admission: student.studentNumber.toUpperCase(),
+              name: student.fullName,
+              class: student.className,
+              status: "active",
+            });
+          save();
+          render();
+          toast(`${importedStudents.length} demo students imported.`);
+        }
+      } catch (err) {
+        error.textContent = err.message;
+        button.disabled = false;
+      }
+    };
     document.querySelectorAll(".edit-student").forEach(
       (button) =>
         (button.onclick = () => {
@@ -718,6 +812,7 @@ function wire() {
     );
     if (schoolDataLive && role !== "Administrator") {
       $("#student-form").closest("section").hidden = true;
+      $("#student-import-panel").hidden = true;
       document
         .querySelectorAll(".edit-student,.student-status-action")
         .forEach((button) => (button.hidden = true));
