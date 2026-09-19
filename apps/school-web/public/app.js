@@ -36,6 +36,7 @@ state.settings.feeTypes ||= [
 state.settings.subjects ||= [];
 let view = "dashboard",
   selectedClass = state.settings.classes[0],
+  selectedSubject = state.settings.subjects?.[0] || "General",
   selectedDate = localDate(),
   search = "",
   studentClass = "",
@@ -72,6 +73,8 @@ const money = (n) =>
     maximumFractionDigits: 2,
   });
 const schoolClasses = () => state.settings.classes;
+const schoolSubjects = () =>
+  state.settings.subjects.length ? state.settings.subjects : ["General"];
 const activeStudents = () =>
   state.students.filter((student) => (student.status || "active") === "active");
 const options = (items, current) =>
@@ -275,6 +278,8 @@ async function loadSchoolStudents() {
   schoolSubjectIds = new Map(data.subjects.map((item) => [item.name, item.id]));
   state.settings.classes = data.classes.map((item) => item.name);
   state.settings.subjects = data.subjects.map((item) => item.name);
+  if (!schoolSubjects().includes(selectedSubject))
+    selectedSubject = schoolSubjects()[0];
   state.students = data.students.map((student) => ({
     id: student.id,
     admission: student.student_number,
@@ -335,10 +340,13 @@ async function loadSchoolAttendance(
     saved: data.saved,
   };
 }
-async function loadSchoolResults(className = selectedClass) {
+async function loadSchoolResults(
+  className = selectedClass,
+  subjectName = selectedSubject,
+) {
   if (!schoolDataLive || !className) return;
   const data = await schoolApi(
-    `/api/school/results?class=${encodeURIComponent(className)}&term=${encodeURIComponent(state.settings.term)}`,
+    `/api/school/results?class=${encodeURIComponent(className)}&subject=${encodeURIComponent(subjectName)}&term=${encodeURIComponent(state.settings.term)}`,
   );
   const classStudentIds = new Set(
     state.students
@@ -347,13 +355,19 @@ async function loadSchoolResults(className = selectedClass) {
   );
   for (const studentId of classStudentIds) delete state.marks[studentId];
   state.published = state.published.filter(
-    (item) => !(item.class === className && item.term === state.settings.term),
+    (item) =>
+      !(
+        item.class === className &&
+        item.subject === subjectName &&
+        item.term === state.settings.term
+      ),
   );
   if (!data.assessment) return;
   for (const mark of data.marks)
     state.marks[mark.student_id] = Number(mark.score);
   state.published.push({
     class: className,
+    subject: data.assessment.subject_name || subjectName,
     term: data.assessment.term,
     version: Number(data.assessment.version),
     pass: state.settings.pass,
@@ -641,7 +655,10 @@ function results() {
   const list = activeStudents().filter((s) => s.class === selectedClass),
     snap = state.published
       .filter(
-        (p) => p.class === selectedClass && p.term === state.settings.term,
+        (p) =>
+          p.class === selectedClass &&
+          (p.subject || "General") === selectedSubject &&
+          p.term === state.settings.term,
       )
       .at(-1);
   return (
@@ -651,14 +668,16 @@ function results() {
         ? "Prepare an assessment, then publish a versioned snapshot."
         : "Prepare a single demo assessment, then publish a versioned snapshot.",
     ) +
-    `<section class="panel"><div class="toolbar"><label for="res-class">Class</label><select id="res-class">${options(schoolClasses(), selectedClass)}</select><span class="badge gray">Draft assessment · /100</span><span class="status-text">Pass threshold: ${state.settings.pass}</span></div>${table(["Student", "Draft mark /100"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><input class="money-input mark-input" type="number" min="0" max="100" step="0.01" data-student="${s.id}" aria-label="Mark for ${esc(s.name)}" value="${state.marks[s.id] ?? ""}"></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="publish">Approve & publish ${schoolDataLive ? "results" : "demo results"}</button><span class="status-text">${schoolDataLive ? "Draft marks are stored securely in Neon." : "Draft marks save on change in this browser."}</span></div><div class="error" id="form-error" role="alert"></div><div class="note">Published results are versioned and do not change when draft marks are edited.</div></section>${snap ? `<section class="panel"><div class="panel-heading"><div><h2>Published snapshot · version ${snap.version}</h2><small>${esc(snap.term)}</small></div><div class="quick-actions"><button class="button secondary" id="print-results">Print report</button><button class="button secondary" id="results-csv">Download CSV</button></div></div>${table(["Student", "Published score", "Outcome"], snap.entries.map((e) => `<tr><td>${esc(e.name)}</td><td>${e.score}</td><td><span class="badge ${e.score >= snap.pass ? "" : "amber"}">${e.score >= snap.pass ? "Pass" : "Below threshold"}</span></td></tr>`).join(""))}</section>` : ""}`
+    `<section class="panel"><div class="toolbar"><label for="res-class">Class</label><select id="res-class">${options(schoolClasses(), selectedClass)}</select><label for="res-subject">Subject</label><select id="res-subject">${options(schoolSubjects(), selectedSubject)}</select><span class="badge gray">Draft assessment · /100</span><span class="status-text">Pass threshold: ${state.settings.pass}</span></div>${table(["Student", "Draft mark /100"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><input class="money-input mark-input" type="number" min="0" max="100" step="0.01" data-student="${s.id}" aria-label="Mark for ${esc(s.name)}" value="${state.marks[s.id] ?? ""}"></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="publish">Approve & publish ${schoolDataLive ? "results" : "demo results"}</button><span class="status-text">${schoolDataLive ? "Draft marks are stored securely in Neon." : "Draft marks save on change in this browser."}</span></div><div class="error" id="form-error" role="alert"></div><div class="note">Published results are versioned by class, subject and term, and do not change when draft marks are edited.</div></section>${snap ? `<section class="panel"><div class="panel-heading"><div><h2>${esc(snap.subject || "General")} · published version ${snap.version}</h2><small>${esc(snap.term)}</small></div><div class="quick-actions"><button class="button secondary" id="print-results">Print report</button><button class="button secondary" id="results-csv">Download CSV</button></div></div>${table(["Student", "Published score", "Outcome"], snap.entries.map((e) => `<tr><td>${esc(e.name)}</td><td>${e.score}</td><td><span class="badge ${e.score >= snap.pass ? "" : "amber"}">${e.score >= snap.pass ? "Pass" : "Below threshold"}</span></td></tr>`).join(""))}</section>` : ""}`
   );
 }
 function currentPublishedResult() {
   return state.published
     .filter(
       (item) =>
-        item.class === selectedClass && item.term === state.settings.term,
+        item.class === selectedClass &&
+        (item.subject || "General") === selectedSubject &&
+        item.term === state.settings.term,
     )
     .at(-1);
 }
@@ -681,7 +700,7 @@ function printResultsReport() {
     return;
   }
   popup.document.write(
-    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Results ${esc(selectedClass)}</title><style>@page{size:A4 portrait;margin:14mm}body{font:12px Arial;color:#203330;margin:0;padding:16px}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:20px}h1{margin:0 0 6px}.summary{display:flex;gap:18px;flex-wrap:wrap;margin:14px 0}.summary span{padding:7px 10px;background:#edf5ef;border-radius:5px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce6e1;text-align:left}th{background:#eaf4ef}button{margin:18px 0;padding:10px 15px;background:#146a56;color:#fff;border:0;border-radius:6px}@media print{button{display:none}body{padding:0}}</style></head><body><header><h1>${esc(state.settings.name)}</h1><div>Published results · ${esc(selectedClass)} · ${esc(result.term)} · Version ${result.version}</div></header><div class="summary"><span>Students: ${result.entries.length}</span><span>Class average: ${average.toFixed(1)}%</span><span>Passed: ${passed}</span><span>Below threshold: ${result.entries.length - passed}</span><span>Pass mark: ${result.pass}%</span></div><table><thead><tr><th>Student number</th><th>Student name</th><th>Score /100</th><th>Outcome</th></tr></thead><tbody>${result.entries.map((entry) => `<tr><td>${esc(entry.admission)}</td><td>${esc(entry.name)}</td><td>${esc(entry.score)}</td><td>${entry.score >= result.pass ? "Pass" : "Below threshold"}</td></tr>`).join("")}</tbody></table><button onclick="window.print()">Print or save as PDF</button></body></html>`,
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Results ${esc(selectedClass)}</title><style>@page{size:A4 portrait;margin:14mm}body{font:12px Arial;color:#203330;margin:0;padding:16px}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:20px}h1{margin:0 0 6px}.summary{display:flex;gap:18px;flex-wrap:wrap;margin:14px 0}.summary span{padding:7px 10px;background:#edf5ef;border-radius:5px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce6e1;text-align:left}th{background:#eaf4ef}button{margin:18px 0;padding:10px 15px;background:#146a56;color:#fff;border:0;border-radius:6px}@media print{button{display:none}body{padding:0}}</style></head><body><header><h1>${esc(state.settings.name)}</h1><div>Published results · ${esc(selectedClass)} · ${esc(result.subject || "General")} · ${esc(result.term)} · Version ${result.version}</div></header><div class="summary"><span>Students: ${result.entries.length}</span><span>Class average: ${average.toFixed(1)}%</span><span>Passed: ${passed}</span><span>Below threshold: ${result.entries.length - passed}</span><span>Pass mark: ${result.pass}%</span></div><table><thead><tr><th>Student number</th><th>Student name</th><th>Score /100</th><th>Outcome</th></tr></thead><tbody>${result.entries.map((entry) => `<tr><td>${esc(entry.admission)}</td><td>${esc(entry.name)}</td><td>${esc(entry.score)}</td><td>${entry.score >= result.pass ? "Pass" : "Below threshold"}</td></tr>`).join("")}</tbody></table><button onclick="window.print()">Print or save as PDF</button></body></html>`,
   );
   popup.document.close();
 }
@@ -696,6 +715,7 @@ function downloadResultsCsv() {
         "Student number",
         "Student name",
         "Class",
+        "Subject",
         "Term",
         "Version",
         "Score /100",
@@ -706,6 +726,7 @@ function downloadResultsCsv() {
         entry.admission,
         entry.name,
         result.class,
+        result.subject || "General",
         result.term,
         result.version,
         entry.score,
@@ -717,7 +738,7 @@ function downloadResultsCsv() {
     url = URL.createObjectURL(blob),
     anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `${selectedClass.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${result.term.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-results.csv`;
+  anchor.download = `${selectedClass.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${(result.subject || "general").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${result.term.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-results.csv`;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   toast("Published results CSV downloaded.");
@@ -1344,7 +1365,17 @@ function wire() {
       selectedClass = e.target.value;
       if (schoolDataLive)
         try {
-          await loadSchoolResults(selectedClass);
+          await loadSchoolResults(selectedClass, selectedSubject);
+        } catch (err) {
+          toast(err.message);
+        }
+      render();
+    };
+    $("#res-subject").onchange = async (e) => {
+      selectedSubject = e.target.value;
+      if (schoolDataLive)
+        try {
+          await loadSchoolResults(selectedClass, selectedSubject);
         } catch (err) {
           toast(err.message);
         }
@@ -1398,6 +1429,7 @@ function wire() {
             method: "POST",
             body: JSON.stringify({
               className: selectedClass,
+              subjectName: selectedSubject,
               term: state.settings.term,
               marks: inputs.map((input) => ({
                 studentId: input.dataset.student,
@@ -1405,12 +1437,12 @@ function wire() {
               })),
             }),
           });
-          await loadSchoolResults(selectedClass);
+          await loadSchoolResults(selectedClass, selectedSubject);
           render();
           toast("Results published to Neon.");
           return;
         }
-        const snap = publishResults(state, selectedClass);
+        const snap = publishResults(state, selectedClass, selectedSubject);
         const persisted = save();
         render();
         if (persisted)
