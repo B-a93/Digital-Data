@@ -33,6 +33,7 @@ state.settings.feeTypes ||= [
     ...state.charges.map((c) => c.label).filter(Boolean),
   ]),
 ];
+state.settings.subjects ||= [];
 let view = "dashboard",
   selectedClass = state.settings.classes[0],
   selectedDate = localDate(),
@@ -48,6 +49,7 @@ let view = "dashboard",
   schoolDataLive = false,
   schoolClassIds = new Map(),
   schoolFeeTypeIds = new Map(),
+  schoolSubjectIds = new Map(),
   platformSchools = [],
   schoolStaff = [],
   schoolActivity = [];
@@ -270,7 +272,9 @@ async function schoolApi(path, options = {}) {
 async function loadSchoolStudents() {
   const data = await schoolApi("/api/school/students");
   schoolClassIds = new Map(data.classes.map((item) => [item.name, item.id]));
+  schoolSubjectIds = new Map(data.subjects.map((item) => [item.name, item.id]));
   state.settings.classes = data.classes.map((item) => item.name);
+  state.settings.subjects = data.subjects.map((item) => item.name);
   state.students = data.students.map((student) => ({
     id: student.id,
     admission: student.student_number,
@@ -812,7 +816,7 @@ function settings() {
           return `<tr><td>${esc(name)}</td><td>${count}</td><td><button class="text-button remove-fee-type" data-name="${esc(name)}" ${count || state.settings.feeTypes.length === 1 ? "disabled" : ""}>Remove</button></td></tr>`;
         })
         .join(""),
-    )}<div class="note">A fee type cannot be removed after it has been used for a charge.</div></section><div class="note">Published results retain their original term and threshold. ${schoolDataLive ? "These settings are stored securely in Neon." : "These prototype settings are stored only in this browser."}</div></div>`
+    )}<div class="note">A fee type cannot be removed after it has been used for a charge.</div></section><section class="panel"><div class="panel-heading"><h2>School subjects</h2><small>${state.settings.subjects.length} configured</small></div><form id="subject-form" class="toolbar"><input name="subjectName" maxlength="80" required placeholder="e.g. Mathematics" aria-label="New subject name"><button class="button">Add subject</button></form><div id="subject-error" class="error" role="alert"></div>${table(["Subject", "Action"], state.settings.subjects.map((name) => `<tr><td>${esc(name)}</td><td><button class="text-button remove-subject" data-name="${esc(name)}">Remove</button></td></tr>`).join(""))}<div class="note">Subjects will be used for assessments and student report cards.</div></section><div class="note">Published results retain their original term and threshold. ${schoolDataLive ? "These settings are stored securely in Neon." : "These prototype settings are stored only in this browser."}</div></div>`
   );
 }
 function wire() {
@@ -1593,6 +1597,63 @@ function wire() {
           save();
           render();
           toast("Fee type removed.");
+        }),
+    );
+    $("#subject-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const name = new FormData(e.target).get("subjectName").trim();
+      if (!name) return;
+      if (
+        state.settings.subjects.some(
+          (subject) => subject.toLowerCase() === name.toLowerCase(),
+        )
+      ) {
+        $("#subject-error").textContent = "That subject already exists.";
+        return;
+      }
+      const button = e.target.querySelector(".button");
+      button.disabled = true;
+      try {
+        if (schoolDataLive) {
+          await schoolApi("/api/school/subjects", {
+            method: "POST",
+            body: JSON.stringify({ name }),
+          });
+          await loadSchoolStudents();
+        } else {
+          state.settings.subjects.push(name);
+          save();
+        }
+        render();
+        toast("Subject added.");
+      } catch (err) {
+        $("#subject-error").textContent = err.message;
+        button.disabled = false;
+      }
+    };
+    document.querySelectorAll(".remove-subject").forEach(
+      (button) =>
+        (button.onclick = async () => {
+          const name = button.dataset.name;
+          if (!confirm(`Remove ${name} from the school subjects?`)) return;
+          try {
+            if (schoolDataLive) {
+              await schoolApi(
+                `/api/school/subjects/${schoolSubjectIds.get(name)}`,
+                { method: "DELETE" },
+              );
+              await loadSchoolStudents();
+            } else {
+              state.settings.subjects = state.settings.subjects.filter(
+                (subject) => subject !== name,
+              );
+              save();
+            }
+            render();
+            toast("Subject removed.");
+          } catch (err) {
+            toast(err.message);
+          }
         }),
     );
   }
