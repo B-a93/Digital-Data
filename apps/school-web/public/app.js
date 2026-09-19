@@ -667,9 +667,96 @@ function results() {
       schoolDataLive
         ? "Prepare an assessment, then publish a versioned snapshot."
         : "Prepare a single demo assessment, then publish a versioned snapshot.",
+      '<button class="button secondary" id="print-report-cards">Print class report cards</button>',
     ) +
     `<section class="panel"><div class="toolbar"><label for="res-class">Class</label><select id="res-class">${options(schoolClasses(), selectedClass)}</select><label for="res-subject">Subject</label><select id="res-subject">${options(schoolSubjects(), selectedSubject)}</select><span class="badge gray">Draft assessment · /100</span><span class="status-text">Pass threshold: ${state.settings.pass}</span></div>${table(["Student", "Draft mark /100"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><input class="money-input mark-input" type="number" min="0" max="100" step="0.01" data-student="${s.id}" aria-label="Mark for ${esc(s.name)}" value="${state.marks[s.id] ?? ""}"></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="publish">Approve & publish ${schoolDataLive ? "results" : "demo results"}</button><span class="status-text">${schoolDataLive ? "Draft marks are stored securely in Neon." : "Draft marks save on change in this browser."}</span></div><div class="error" id="form-error" role="alert"></div><div class="note">Published results are versioned by class, subject and term, and do not change when draft marks are edited.</div></section>${snap ? `<section class="panel"><div class="panel-heading"><div><h2>${esc(snap.subject || "General")} · published version ${snap.version}</h2><small>${esc(snap.term)}</small></div><div class="quick-actions"><button class="button secondary" id="print-results">Print report</button><button class="button secondary" id="results-csv">Download CSV</button></div></div>${table(["Student", "Published score", "Outcome"], snap.entries.map((e) => `<tr><td>${esc(e.name)}</td><td>${e.score}</td><td><span class="badge ${e.score >= snap.pass ? "" : "amber"}">${e.score >= snap.pass ? "Pass" : "Below threshold"}</span></td></tr>`).join(""))}</section>` : ""}`
   );
+}
+async function printClassReportCards() {
+  const popup = window.open("", "_blank");
+  if (!popup) {
+    toast("Allow pop-ups to open the printable report cards.");
+    return;
+  }
+  popup.document.write(
+    "<p style='font-family:Arial;padding:24px'>Preparing report cards…</p>",
+  );
+  try {
+    let students, publishedResults;
+    if (schoolDataLive) {
+      const data = await schoolApi(
+        `/api/school/report-cards?class=${encodeURIComponent(selectedClass)}&term=${encodeURIComponent(state.settings.term)}`,
+      );
+      students = data.students.map((student) => ({
+        id: student.id,
+        admission: student.student_number,
+        name: student.full_name,
+      }));
+      publishedResults = data.results.map((result) => ({
+        studentId: result.student_id,
+        subject: result.subject_name,
+        score: Number(result.score),
+        maximum: Number(result.maximum_score),
+      }));
+    } else {
+      students = activeStudents()
+        .filter((student) => student.class === selectedClass)
+        .map((student) => ({
+          id: student.id,
+          admission: student.admission,
+          name: student.name,
+        }));
+      const latest = new Map();
+      state.published
+        .filter(
+          (item) =>
+            item.class === selectedClass && item.term === state.settings.term,
+        )
+        .forEach((item) => latest.set(item.subject || "General", item));
+      publishedResults = [...latest.values()].flatMap((snapshot) =>
+        snapshot.entries.map((entry) => ({
+          studentId: entry.studentId || entry.id,
+          subject: snapshot.subject || "General",
+          score: Number(entry.score),
+          maximum: 100,
+        })),
+      );
+    }
+    if (!publishedResults.length)
+      throw Error("Publish at least one subject before printing report cards.");
+    const cards = students
+      .map((student) => {
+        const marks = publishedResults.filter(
+            (result) => result.studentId === student.id,
+          ),
+          average = marks.length
+            ? marks.reduce(
+                (sum, mark) => sum + (mark.score / mark.maximum) * 100,
+                0,
+              ) / marks.length
+            : 0,
+          passed = marks.filter(
+            (mark) => (mark.score / mark.maximum) * 100 >= state.settings.pass,
+          ).length;
+        return `<section class="report-card"><header><h1>${esc(state.settings.name)}</h1><div>Student Report Card · ${esc(state.settings.term)}</div></header><div class="details"><div><strong>Student:</strong> ${esc(student.name)}</div><div><strong>Student number:</strong> ${esc(student.admission)}</div><div><strong>Class:</strong> ${esc(selectedClass)}</div><div><strong>Subjects published:</strong> ${marks.length}</div></div><table><thead><tr><th>Subject</th><th>Score</th><th>Outcome</th></tr></thead><tbody>${marks
+          .map((mark) => {
+            const percentage = (mark.score / mark.maximum) * 100;
+            return `<tr><td>${esc(mark.subject)}</td><td>${mark.score} / ${mark.maximum}</td><td>${percentage >= state.settings.pass ? "Pass" : "Below threshold"}</td></tr>`;
+          })
+          .join(
+            "",
+          )}</tbody></table><div class="summary"><span>Average: <strong>${average.toFixed(1)}%</strong></span><span>Subjects passed: <strong>${passed} of ${marks.length}</strong></span><span>Overall: <strong>${marks.length && average >= state.settings.pass ? "Pass" : "Below threshold"}</strong></span></div><div class="signatures"><span>Class teacher</span><span>Head teacher</span></div></section>`;
+      })
+      .join("");
+    popup.document.open();
+    popup.document.write(
+      `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(selectedClass)} Report Cards</title><style>@page{size:A4 portrait;margin:14mm}body{font:12px Arial;color:#203330;margin:0}.report-card{min-height:250mm;page-break-after:always;box-sizing:border-box;padding:10px}.report-card:last-of-type{page-break-after:auto}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:20px}h1{margin:0 0 6px}.details{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:20px}table{width:100%;border-collapse:collapse}th,td{padding:9px;border:1px solid #dce6e1;text-align:left}th{background:#eaf4ef}.summary{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0}.summary span{padding:8px 11px;background:#edf5ef;border-radius:5px}.signatures{display:flex;justify-content:space-between;margin-top:55px}.signatures span{width:38%;border-top:1px solid #61706c;padding-top:7px;text-align:center}.print{position:fixed;right:18px;top:18px;padding:10px 15px;background:#146a56;color:#fff;border:0;border-radius:6px}@media(max-width:600px){.details{grid-template-columns:1fr}.report-card{overflow-x:auto}table{min-width:480px}}@media print{.print{display:none}.report-card{padding:0}}</style></head><body><button class="print" onclick="window.print()">Print or save as PDF</button>${cards}</body></html>`,
+    );
+    popup.document.close();
+  } catch (error) {
+    popup.close();
+    toast(error.message);
+  }
 }
 function currentPublishedResult() {
   return state.published
@@ -1359,6 +1446,7 @@ function wire() {
     };
   }
   if (view === "results") {
+    $("#print-report-cards").onclick = printClassReportCards;
     if ($("#print-results")) $("#print-results").onclick = printResultsReport;
     if ($("#results-csv")) $("#results-csv").onclick = downloadResultsCsv;
     $("#res-class").onchange = async (e) => {
