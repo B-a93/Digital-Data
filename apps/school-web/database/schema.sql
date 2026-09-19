@@ -78,6 +78,14 @@ CREATE TABLE IF NOT EXISTS classes (
   UNIQUE (school_id, name)
 );
 
+CREATE TABLE IF NOT EXISTS subjects (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (school_id, name)
+);
+
 CREATE TABLE IF NOT EXISTS students (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
