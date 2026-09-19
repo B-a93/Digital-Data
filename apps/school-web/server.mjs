@@ -269,6 +269,7 @@ const server = http.createServer(async (req, res) => {
         payments,
         assessments,
         marks,
+        timetable,
         staff,
         activity,
       ] = await Promise.all([
@@ -322,6 +323,11 @@ const server = http.createServer(async (req, res) => {
           [context.school_id],
         ),
         query(
+          `SELECT id,class_id,subject_id,weekday,start_time,end_time,teacher_name,created_at
+           FROM timetable_entries WHERE school_id=$1 ORDER BY class_id,weekday,start_time`,
+          [context.school_id],
+        ),
+        query(
           `SELECT full_name,email,role,invitation_status,invited_at,accepted_at
            FROM staff_invitations WHERE school_id=$1 ORDER BY full_name`,
           [context.school_id],
@@ -346,6 +352,7 @@ const server = http.createServer(async (req, res) => {
         payments: payments.rows,
         assessments: assessments.rows,
         assessmentMarks: marks.rows,
+        timetable: timetable.rows,
         staff: staff.rows,
         activity: activity.rows,
       };
@@ -1452,6 +1459,144 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       json(res, 405, { error: "Method not allowed" });
+      return;
+    }
+    if (pathname === "/api/school/timetable") {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator", "teacher");
+      if (req.method === "GET") {
+        const className = String(
+          requestUrl.searchParams.get("class") || "",
+        ).trim();
+        if (!className) {
+          json(res, 400, { error: "Choose a class." });
+          return;
+        }
+        const entries = await query(
+          `SELECT te.id,te.weekday,to_char(te.start_time,'HH24:MI') AS start_time,
+             to_char(te.end_time,'HH24:MI') AS end_time,te.teacher_name,
+             c.name AS class_name,su.name AS subject_name
+           FROM timetable_entries te JOIN classes c ON c.id=te.class_id
+           JOIN subjects su ON su.id=te.subject_id
+           WHERE te.school_id=$1 AND c.name=$2
+           ORDER BY te.weekday,te.start_time`,
+          [context.school_id, className],
+        );
+        json(res, 200, { entries: entries.rows });
+        return;
+      }
+      if (req.method === "POST") {
+        requireRole(context, "administrator");
+        const data = await readJsonBody(req),
+          className = String(data.className || "").trim(),
+          subjectName = String(data.subjectName || "").trim(),
+          teacherName = String(data.teacherName || "").trim(),
+          weekday = Number(data.weekday),
+          startTime = String(data.startTime || ""),
+          endTime = String(data.endTime || "");
+        if (
+          !className ||
+          !subjectName ||
+          !teacherName ||
+          teacherName.length > 100 ||
+          !Number.isInteger(weekday) ||
+          weekday < 1 ||
+          weekday > 7 ||
+          !/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime) ||
+          !/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime) ||
+          endTime <= startTime
+        ) {
+          json(res, 400, { error: "Enter valid timetable details." });
+          return;
+        }
+        const entry = await transaction(async (client) => {
+          const schoolClass = (
+              await client.query(
+                `SELECT id FROM classes WHERE school_id=$1 AND name=$2`,
+                [context.school_id, className],
+              )
+            ).rows[0],
+            subject = (
+              await client.query(
+                `SELECT id FROM subjects WHERE school_id=$1 AND name=$2`,
+                [context.school_id, subjectName],
+              )
+            ).rows[0];
+          if (!schoolClass || !subject)
+            throw Object.assign(new Error("Class or subject not found."), {
+              status: 404,
+            });
+          const conflict = (
+            await client.query(
+              `SELECT id FROM timetable_entries
+               WHERE school_id=$1 AND class_id=$2 AND weekday=$3
+               AND start_time<$5::time AND end_time>$4::time LIMIT 1`,
+              [context.school_id, schoolClass.id, weekday, startTime, endTime],
+            )
+          ).rows[0];
+          if (conflict)
+            throw Object.assign(
+              new Error("This class already has a lesson during that time."),
+              { status: 409 },
+            );
+          return (
+            await client.query(
+              `INSERT INTO timetable_entries(school_id,class_id,subject_id,weekday,start_time,end_time,teacher_name)
+               VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+              [
+                context.school_id,
+                schoolClass.id,
+                subject.id,
+                weekday,
+                startTime,
+                endTime,
+                teacherName,
+              ],
+            )
+          ).rows[0];
+        });
+        await recordAudit(context, "timetable.created", "timetable", entry.id, {
+          className,
+          subjectName,
+          weekday,
+          startTime,
+          endTime,
+          teacherName,
+        });
+        json(res, 201, { entry });
+        return;
+      }
+      json(res, 405, { error: "Method not allowed" });
+      return;
+    }
+    const timetableRoute = pathname.match(
+      /^\/api\/school\/timetable\/([0-9a-f-]{36})$/,
+    );
+    if (timetableRoute) {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method !== "DELETE") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const deleted = (
+        await query(
+          `DELETE FROM timetable_entries WHERE id=$1 AND school_id=$2 RETURNING id`,
+          [timetableRoute[1], context.school_id],
+        )
+      ).rows[0];
+      if (!deleted) {
+        json(res, 404, { error: "Timetable entry not found." });
+        return;
+      }
+      await recordAudit(
+        context,
+        "timetable.removed",
+        "timetable",
+        deleted.id,
+        {},
+      );
+      json(res, 200, { status: "deleted" });
       return;
     }
     if (pathname === "/api/school/results") {
