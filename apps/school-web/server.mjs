@@ -255,7 +255,7 @@ const server = http.createServer(async (req, res) => {
       if (req.method === "GET") {
         const [students, schoolClasses] = await Promise.all([
           query(
-            `SELECT st.id,st.student_number,st.full_name,st.status,c.name AS class_name
+            `SELECT st.id,st.student_number,st.full_name,st.guardian_name,st.guardian_phone,st.status,c.name AS class_name
              FROM students st LEFT JOIN classes c ON c.id=st.class_id
              WHERE st.school_id=$1 ORDER BY st.full_name`,
             [context.school_id],
@@ -278,11 +278,15 @@ const server = http.createServer(async (req, res) => {
             .trim()
             .toUpperCase(),
           fullName = String(data.fullName || "").trim(),
-          className = String(data.className || "").trim();
+          className = String(data.className || "").trim(),
+          guardianName = String(data.guardianName || "").trim(),
+          guardianPhone = String(data.guardianPhone || "").trim();
         if (
           !/^[A-Z0-9][A-Z0-9\-/]{1,29}$/.test(studentNumber) ||
           !fullName ||
-          !className
+          !className ||
+          guardianName.length > 100 ||
+          guardianPhone.length > 40
         ) {
           json(res, 400, { error: "Enter valid student details." });
           return;
@@ -297,10 +301,17 @@ const server = http.createServer(async (req, res) => {
           ).rows[0];
           return (
             await client.query(
-              `INSERT INTO students(school_id,class_id,student_number,full_name)
-               VALUES($1,$2,$3,$4)
-               RETURNING id,student_number,full_name,status`,
-              [context.school_id, schoolClass.id, studentNumber, fullName],
+              `INSERT INTO students(school_id,class_id,student_number,full_name,guardian_name,guardian_phone)
+               VALUES($1,$2,$3,$4,$5,$6)
+               RETURNING id,student_number,full_name,guardian_name,guardian_phone,status`,
+              [
+                context.school_id,
+                schoolClass.id,
+                studentNumber,
+                fullName,
+                guardianName || null,
+                guardianPhone || null,
+              ],
             )
           ).rows[0];
         });
@@ -308,6 +319,8 @@ const server = http.createServer(async (req, res) => {
           studentNumber,
           fullName,
           className,
+          guardianName,
+          guardianPhone,
         });
         json(res, 201, { student });
         return;
@@ -521,6 +534,8 @@ const server = http.createServer(async (req, res) => {
           .toUpperCase(),
         fullName: String(row.fullName || "").trim(),
         className: String(row.className || "").trim(),
+        guardianName: String(row.guardianName || "").trim(),
+        guardianPhone: String(row.guardianPhone || "").trim(),
       }));
       const invalid = prepared.filter(
         (row) =>
@@ -528,7 +543,9 @@ const server = http.createServer(async (req, res) => {
           !row.fullName ||
           row.fullName.length > 100 ||
           !row.className ||
-          row.className.length > 60,
+          row.className.length > 60 ||
+          row.guardianName.length > 100 ||
+          row.guardianPhone.length > 40,
       );
       const seen = new Set(),
         duplicateRows = prepared.filter((row) => {
@@ -569,13 +586,15 @@ const server = http.createServer(async (req, res) => {
             classIds.set(row.className, schoolClass.id);
           }
           await client.query(
-            `INSERT INTO students(school_id,class_id,student_number,full_name)
-             VALUES($1,$2,$3,$4)`,
+            `INSERT INTO students(school_id,class_id,student_number,full_name,guardian_name,guardian_phone)
+             VALUES($1,$2,$3,$4,$5,$6)`,
             [
               context.school_id,
               classIds.get(row.className),
               row.studentNumber,
               row.fullName,
+              row.guardianName || null,
+              row.guardianPhone || null,
             ],
           );
         }
@@ -766,11 +785,15 @@ const server = http.createServer(async (req, res) => {
           .trim()
           .toUpperCase(),
         fullName = String(data.fullName || "").trim(),
-        className = String(data.className || "").trim();
+        className = String(data.className || "").trim(),
+        guardianName = String(data.guardianName || "").trim(),
+        guardianPhone = String(data.guardianPhone || "").trim();
       if (
         !/^[A-Z0-9][A-Z0-9\-/]{1,29}$/.test(studentNumber) ||
         !fullName ||
-        !className
+        !className ||
+        guardianName.length > 100 ||
+        guardianPhone.length > 40
       ) {
         json(res, 400, { error: "Enter valid student details." });
         return;
@@ -785,15 +808,17 @@ const server = http.createServer(async (req, res) => {
         ).rows[0];
         return (
           await client.query(
-            `UPDATE students SET student_number=$3,full_name=$4,class_id=$5,updated_at=now()
+            `UPDATE students SET student_number=$3,full_name=$4,class_id=$5,guardian_name=$6,guardian_phone=$7,updated_at=now()
              WHERE id=$1 AND school_id=$2
-             RETURNING id,student_number,full_name,status`,
+             RETURNING id,student_number,full_name,guardian_name,guardian_phone,status`,
             [
               studentRoute[1],
               context.school_id,
               studentNumber,
               fullName,
               schoolClass.id,
+              guardianName || null,
+              guardianPhone || null,
             ],
           )
         ).rows[0];
@@ -806,6 +831,8 @@ const server = http.createServer(async (req, res) => {
         studentNumber,
         fullName,
         className,
+        guardianName,
+        guardianPhone,
       });
       json(res, 200, { student: updated });
       return;
