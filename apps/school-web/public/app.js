@@ -297,13 +297,17 @@ function dashboard() {
     [
       "Total students",
       state.students.length,
-      "Across " + schoolClasses().length + " demo classes",
+      "Across " +
+        schoolClasses().length +
+        (schoolDataLive ? " classes" : " demo classes"),
       "♙",
     ],
     [
       "Recorded payments",
       money(paid),
-      "Demo transactions · not actual collections",
+      schoolDataLive
+        ? "Recorded school transactions"
+        : "Demo transactions · not actual collections",
       "◈",
     ],
     [
@@ -322,7 +326,9 @@ function dashboard() {
   return (
     heading(
       "A clearer view of your school",
-      "Welcome back. Here’s your fictional school workspace.",
+      schoolDataLive
+        ? "Welcome back. Here’s your school workspace."
+        : "Welcome back. Here’s your fictional school workspace.",
       `<a class="button" href="#students">＋ Add a student</a>`,
     ) +
     `<div class="cards">${stats.map(([label, n, sub, icon]) => `<div class="card"><div class="card-label">${label}<span class="stat-icon" aria-hidden="true">${icon}</span></div><div class="number">${n}</div><small>${sub}</small></div>`).join("")}</div><div class="grid"><section class="panel"><div class="panel-heading"><h2>Student overview</h2><a class="text-button" href="#students">View all students →</a></div>${table(
@@ -334,7 +340,7 @@ function dashboard() {
             `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td>${badge(balance(state, s.id))}</td></tr>`,
         )
         .join(""),
-    )}</section><section class="panel"><div class="panel-heading"><h2>Fees at a glance</h2><small>Current demo ledger</small></div><div class="number">${money(paid)}</div><p>recorded against ${money(charges)} in charges</p><div class="bar" role="meter" aria-label="Payments relative to charges" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${charges ? Math.min(100, Math.round((paid / charges) * 100)) : 0}"><div class="bar-fill" id="fee-bar"></div></div><div class="bar-row"><div class="bar-label"><span>Total charges</span><strong>${money(charges)}</strong></div><div class="bar-label"><span>Unpaid student balances</span><strong>${money(outstanding)}</strong></div></div><div class="quick-actions"><a class="button secondary" href="#fees">Record payment</a><a class="button secondary" href="#reports">Export report</a></div><div class="note">Start with one workflow at a time. This prototype uses fictional records stored only in this browser.</div></section><section class="panel wide"><div class="panel-heading"><h2>Your next tasks</h2><span class="badge gray">${esc(role)} demo view</span></div><div class="quick-actions">${(role ===
+    )}</section><section class="panel"><div class="panel-heading"><h2>Fees at a glance</h2><small>${schoolDataLive ? "Current ledger" : "Current demo ledger"}</small></div><div class="number">${money(paid)}</div><p>recorded against ${money(charges)} in charges</p><div class="bar" role="meter" aria-label="Payments relative to charges" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${charges ? Math.min(100, Math.round((paid / charges) * 100)) : 0}"><div class="bar-fill" id="fee-bar"></div></div><div class="bar-row"><div class="bar-label"><span>Total charges</span><strong>${money(charges)}</strong></div><div class="bar-label"><span>Unpaid student balances</span><strong>${money(outstanding)}</strong></div></div><div class="quick-actions"><a class="button secondary" href="#fees">Record payment</a><a class="button secondary" href="#reports">Export report</a></div><div class="note">${schoolDataLive ? "Student and financial records are securely stored in the school database." : "This prototype uses fictional records stored only in this browser."}</div></section><section class="panel wide"><div class="panel-heading"><h2>Your next tasks</h2><span class="badge gray">${esc(role)} ${schoolDataLive ? "workspace" : "demo view"}</span></div><div class="quick-actions">${(role ===
     "Teacher"
       ? [
           ["attendance", "Take class attendance"],
@@ -343,7 +349,10 @@ function dashboard() {
       : role === "Finance"
         ? [
             ["fees", "Review fee balances"],
-            ["reports", "Download demo ledger"],
+            [
+              "reports",
+              schoolDataLive ? "Download ledger" : "Download demo ledger",
+            ],
           ]
         : [
             ["students", "Review student register"],
@@ -422,16 +431,20 @@ function results() {
   return (
     heading(
       "Results",
-      "Prepare a single demo assessment, then publish a versioned snapshot.",
+      schoolDataLive
+        ? "Prepare an assessment, then publish a versioned snapshot."
+        : "Prepare a single demo assessment, then publish a versioned snapshot.",
     ) +
-    `<section class="panel"><div class="toolbar"><label for="res-class">Class</label><select id="res-class">${options(schoolClasses(), selectedClass)}</select><span class="badge gray">Draft assessment · /100</span><span class="status-text">Pass threshold: ${state.settings.pass}</span></div>${table(["Student", "Draft mark /100"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><input class="money-input mark-input" type="number" min="0" max="100" step="0.01" data-student="${s.id}" aria-label="Mark for ${esc(s.name)}" value="${state.marks[s.id] ?? ""}"></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="publish">Approve & publish demo results</button><span class="status-text">Draft marks save on change in this browser.</span></div><div class="error" id="form-error" role="alert"></div><div class="note">Prototype combines review and publication. Production must enforce authorised academic approval. A published snapshot does not change when draft marks change.</div></section>${snap ? `<section class="panel"><div class="panel-heading"><h2>Published snapshot · version ${snap.version}</h2><small>${esc(snap.term)}</small></div>${table(["Student", "Published score", "Outcome"], snap.entries.map((e) => `<tr><td>${esc(e.name)}</td><td>${e.score}</td><td><span class="badge ${e.score >= snap.pass ? "" : "amber"}">${e.score >= snap.pass ? "Pass" : "Below threshold"}</span></td></tr>`).join(""))}</section>` : ""}`
+    `<section class="panel"><div class="toolbar"><label for="res-class">Class</label><select id="res-class">${options(schoolClasses(), selectedClass)}</select><span class="badge gray">Draft assessment · /100</span><span class="status-text">Pass threshold: ${state.settings.pass}</span></div>${table(["Student", "Draft mark /100"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><input class="money-input mark-input" type="number" min="0" max="100" step="0.01" data-student="${s.id}" aria-label="Mark for ${esc(s.name)}" value="${state.marks[s.id] ?? ""}"></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="publish">Approve & publish ${schoolDataLive ? "results" : "demo results"}</button><span class="status-text">${schoolDataLive ? "Draft marks are stored securely in Neon." : "Draft marks save on change in this browser."}</span></div><div class="error" id="form-error" role="alert"></div><div class="note">Published results are versioned and do not change when draft marks are edited.</div></section>${snap ? `<section class="panel"><div class="panel-heading"><h2>Published snapshot · version ${snap.version}</h2><small>${esc(snap.term)}</small></div>${table(["Student", "Published score", "Outcome"], snap.entries.map((e) => `<tr><td>${esc(e.name)}</td><td>${e.score}</td><td><span class="badge ${e.score >= snap.pass ? "" : "amber"}">${e.score >= snap.pass ? "Pass" : "Below threshold"}</span></td></tr>`).join(""))}</section>` : ""}`
   );
 }
 function reports() {
   return (
     heading(
       "Reports",
-      "Download fictional records for review—not official school documents.",
+      schoolDataLive
+        ? "Download school records for review and administration."
+        : "Download fictional records for review—not official school documents.",
     ) +
     `<div class="stack"><section class="panel"><div class="panel-heading"><div><h2>Payment status report</h2><p>Separate students with outstanding balances from students who are fully paid.</p></div><span class="badge gray">${esc(state.settings.term)}</span></div><div class="quick-actions"><button class="button" id="payment-excel">Download Excel</button><button class="button secondary" id="payment-print">Print or save as PDF</button></div><div class="note">Credit balances are included with fully paid students and clearly marked as credit.</div></section><section class="panel">${[
       [
@@ -442,7 +455,7 @@ function reports() {
       [
         "fees",
         "Fee ledger",
-        "Individual demo charges and receipts with signed amounts.",
+        `${schoolDataLive ? "Individual" : "Individual demo"} charges and receipts with signed amounts.`,
       ],
       [
         "results",
@@ -456,7 +469,7 @@ function reports() {
       )
       .join(
         "",
-      )}<div class="note">Exports currently include this school workspace’s browser demo records. Real Neon student and payment records will replace them in the production stage.</div></section></div>`
+      )}<div class="note">${schoolDataLive ? "Exports contain the current school records stored in Neon." : "Exports contain this browser’s fictional demonstration records."}</div></section></div>`
   );
 }
 function settings() {
@@ -1343,6 +1356,11 @@ async function showPortal(session) {
     await loadSchoolAttendance();
     await loadSchoolResults();
   }
+  $("#workspace-status").textContent = activeSchool ? "PILOT" : "DEMO";
+  $("#workspace-message").textContent = activeSchool
+    ? "Secure login and live Neon school records are active."
+    : "Secure login is active. This workspace contains demonstration records.";
+  $("#reset").hidden = Boolean(activeSchool);
   authScreen.hidden = true;
   authScreen.style.display = "none";
   layout.hidden = false;
