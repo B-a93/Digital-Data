@@ -295,6 +295,7 @@ async function loadSchoolFinance() {
     studentId: charge.student_id,
     label: charge.description,
     amount: Number(charge.amount_bututs),
+    createdAt: charge.created_at,
   }));
   state.payments = data.payments.map((payment) => ({
     id: payment.id,
@@ -541,7 +542,7 @@ function fees() {
         ? "Review charges, record receipts and see outstanding balances."
         : "Review charges, record demo receipts and see outstanding balances.",
     ) +
-    `<div class="grid"><section class="panel"><div class="panel-heading"><h2>Record ${schoolDataLive ? "a" : "a demo"} payment</h2></div><form id="payment-form"><div class="field"><label for="pay-student">Student</label><select id="pay-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)} · ${esc(s.admission)}</option>`).join("")}</select></div><div class="field"><label for="amount">Amount in dalasi</label><input id="amount" name="amount" type="text" inputmode="decimal" required placeholder="1500.00"></div><div class="note">Overpayment becomes a displayed credit, not an automatic refund.</div><div class="form-actions"><button class="button">Record payment</button></div><div id="form-error" class="error" role="alert"></div><div id="receipt" role="status"></div></form></section><section class="panel"><div class="panel-heading"><h2>Add ${schoolDataLive ? "a" : "a demo"} charge</h2></div><form id="charge-form"><div class="field"><label for="charge-student">Student</label><select id="charge-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div><div class="field"><label for="charge-label">Fee type</label><select id="charge-label" name="label">${options(state.settings.feeTypes, state.settings.feeTypes[0])}</select></div><div class="field"><label for="charge-amount">Amount in dalasi</label><input id="charge-amount" name="amount" inputmode="decimal" required placeholder="1500.00"></div><div class="form-actions"><button class="button secondary">Add charge</button></div><div id="charge-error" class="error" role="alert"></div></form></section><section class="panel wide"><div class="panel-heading"><div><h2>Charge an entire class</h2><p>Apply the same fee to every active student in a class.</p></div></div><form id="class-charge-form"><div class="form-grid"><div class="field"><label for="class-charge-class">Class</label><select id="class-charge-class" name="className">${options(schoolClasses(), schoolClasses()[0])}</select></div><div class="field"><label for="class-charge-label">Fee type</label><select id="class-charge-label" name="label">${options(state.settings.feeTypes, state.settings.feeTypes[0])}</select></div><div class="field"><label for="class-charge-amount">Amount per student in dalasi</label><input id="class-charge-amount" name="amount" inputmode="decimal" required placeholder="1500.00"></div></div><div class="form-actions"><button class="button secondary">Apply class charge</button><span class="status-text">Only active students will be charged.</span></div><div id="class-charge-error" class="error" role="alert"></div></form></section><section class="panel wide"><div class="panel-heading"><h2>Student balances</h2><small>Negative balance = credit</small></div>${table(["Student", "Class", "Balance", "Status"], state.students.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td>${money(balance(state, s.id))}</td><td>${badge(balance(state, s.id))}</td></tr>`).join(""))}</section><section class="panel wide"><div class="panel-heading"><h2>Recent ${schoolDataLive ? "" : "demo "}receipts</h2></div>${table(
+    `<div class="grid"><section class="panel"><div class="panel-heading"><h2>Record ${schoolDataLive ? "a" : "a demo"} payment</h2></div><form id="payment-form"><div class="field"><label for="pay-student">Student</label><select id="pay-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)} · ${esc(s.admission)}</option>`).join("")}</select></div><div class="field"><label for="amount">Amount in dalasi</label><input id="amount" name="amount" type="text" inputmode="decimal" required placeholder="1500.00"></div><div class="note">Overpayment becomes a displayed credit, not an automatic refund.</div><div class="form-actions"><button class="button">Record payment</button></div><div id="form-error" class="error" role="alert"></div><div id="receipt" role="status"></div></form></section><section class="panel"><div class="panel-heading"><h2>Add ${schoolDataLive ? "a" : "a demo"} charge</h2></div><form id="charge-form"><div class="field"><label for="charge-student">Student</label><select id="charge-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div><div class="field"><label for="charge-label">Fee type</label><select id="charge-label" name="label">${options(state.settings.feeTypes, state.settings.feeTypes[0])}</select></div><div class="field"><label for="charge-amount">Amount in dalasi</label><input id="charge-amount" name="amount" inputmode="decimal" required placeholder="1500.00"></div><div class="form-actions"><button class="button secondary">Add charge</button></div><div id="charge-error" class="error" role="alert"></div></form></section><section class="panel wide"><div class="panel-heading"><div><h2>Charge an entire class</h2><p>Apply the same fee to every active student in a class.</p></div></div><form id="class-charge-form"><div class="form-grid"><div class="field"><label for="class-charge-class">Class</label><select id="class-charge-class" name="className">${options(schoolClasses(), schoolClasses()[0])}</select></div><div class="field"><label for="class-charge-label">Fee type</label><select id="class-charge-label" name="label">${options(state.settings.feeTypes, state.settings.feeTypes[0])}</select></div><div class="field"><label for="class-charge-amount">Amount per student in dalasi</label><input id="class-charge-amount" name="amount" inputmode="decimal" required placeholder="1500.00"></div></div><div class="form-actions"><button class="button secondary">Apply class charge</button><span class="status-text">Only active students will be charged.</span></div><div id="class-charge-error" class="error" role="alert"></div></form></section><section class="panel wide"><div class="panel-heading"><h2>Student balances</h2><small>Negative balance = credit</small></div>${table(["Student", "Class", "Balance", "Status", "Action"], state.students.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td>${money(balance(state, s.id))}</td><td>${badge(balance(state, s.id))}</td><td><button class="text-button print-statement" data-id="${esc(s.id)}">Print statement</button></td></tr>`).join(""))}</section><section class="panel wide"><div class="panel-heading"><h2>Recent ${schoolDataLive ? "" : "demo "}receipts</h2></div>${table(
       ["Receipt", "Student", "Date", "Amount", "Action"],
       state.payments
         .slice()
@@ -570,6 +571,43 @@ function printReceipt(paymentId) {
   }
   popup.document.write(
     `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(payment.reference)}</title><style>@page{size:A5 portrait;margin:14mm}body{font:14px Arial;color:#203330;margin:0;padding:24px}.receipt{max-width:620px;margin:auto;border:1px solid #dce6e1;border-radius:12px;padding:30px}header{border-bottom:3px solid #146a56;padding-bottom:16px;margin-bottom:22px}h1{margin:0 0 6px;font-size:24px}.brand{color:#146a56;font-weight:bold}.row{display:flex;justify-content:space-between;gap:20px;padding:10px 0;border-bottom:1px solid #edf1ef}.amount{font-size:26px;font-weight:bold;color:#146a56}.foot{margin-top:24px;color:#60736d;font-size:11px;line-height:1.5}button{margin-top:20px;padding:10px 15px;background:#146a56;color:white;border:0;border-radius:6px}@media print{button{display:none}body{padding:0}.receipt{border:0}}</style></head><body><div class="receipt"><header><div class="brand">${esc(state.settings.name)}</div><h1>Payment receipt</h1><div>${esc(state.settings.term)}</div></header><div class="row"><span>Receipt number</span><strong>${esc(payment.reference)}</strong></div><div class="row"><span>Date</span><strong>${esc(payment.date)}</strong></div><div class="row"><span>Student</span><strong>${esc(student.name)}</strong></div><div class="row"><span>Student number</span><strong>${esc(student.admission)}</strong></div><div class="row"><span>Class</span><strong>${esc(student.class)}</strong></div><div class="row"><span>Amount received</span><strong class="amount">${money(payment.amount)}</strong></div><div class="row"><span>Current balance</span><strong>${money(balance(state, student.id))}</strong></div><p class="foot">Generated by the School Management Portal by Elegant Empire AI. Keep this receipt for the school’s and payer’s records.</p><button onclick="window.print()">Print or save as PDF</button></div></body></html>`,
+  );
+  popup.document.close();
+}
+function printStudentStatement(studentId) {
+  const student = state.students.find((item) => item.id === studentId);
+  if (!student) {
+    toast("Student record could not be found.");
+    return;
+  }
+  const charges = state.charges.filter((item) => item.studentId === studentId),
+    payments = state.payments.filter((item) => item.studentId === studentId),
+    totalCharges = charges.reduce((sum, item) => sum + item.amount, 0),
+    totalPayments = payments.reduce((sum, item) => sum + item.amount, 0),
+    currentBalance = totalCharges - totalPayments,
+    popup = window.open("", "_blank");
+  if (!popup) {
+    toast("Allow pop-ups to open the printable statement.");
+    return;
+  }
+  const rows = [
+    ...charges.map((item) => ({
+      date: item.createdAt ? String(item.createdAt).slice(0, 10) : "—",
+      type: "Charge",
+      reference: item.label,
+      charge: item.amount,
+      payment: 0,
+    })),
+    ...payments.map((item) => ({
+      date: item.date || "—",
+      type: "Payment",
+      reference: item.reference,
+      charge: 0,
+      payment: item.amount,
+    })),
+  ].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  popup.document.write(
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(student.admission)} Fee Statement</title><style>@page{size:A4 portrait;margin:14mm}body{font:12px Arial;color:#203330;margin:0;padding:16px}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:20px}h1{margin:0 0 6px}.details{display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;margin-bottom:20px}.summary{display:flex;gap:14px;flex-wrap:wrap;margin:16px 0}.summary span{padding:8px 11px;background:#edf5ef;border-radius:5px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce6e1;text-align:left}th{background:#eaf4ef}td:nth-child(n+4),th:nth-child(n+4){text-align:right}.balance{font-weight:bold;color:${currentBalance > 0 ? "#956f22" : "#146a56"}}button{margin:18px 0;padding:10px 15px;background:#146a56;color:#fff;border:0;border-radius:6px}@media(max-width:600px){.details{grid-template-columns:1fr}body{overflow-x:auto}table{min-width:650px}}@media print{button{display:none}body{padding:0}}</style></head><body><header><h1>${esc(state.settings.name)}</h1><div>Student fee statement · ${esc(state.settings.term)}</div></header><div class="details"><div><strong>Student:</strong> ${esc(student.name)}</div><div><strong>Student number:</strong> ${esc(student.admission)}</div><div><strong>Class:</strong> ${esc(student.class)}</div><div><strong>Status:</strong> ${esc(student.status || "active")}</div><div><strong>Guardian:</strong> ${esc(student.guardianName || "—")}</div><div><strong>Guardian phone:</strong> ${esc(student.guardianPhone || "—")}</div></div><div class="summary"><span>Total charges: ${money(totalCharges)}</span><span>Total paid: ${money(totalPayments)}</span><span class="balance">${currentBalance > 0 ? "Outstanding" : currentBalance < 0 ? "Credit" : "Balance"}: ${money(Math.abs(currentBalance))}</span></div><table><thead><tr><th>Date</th><th>Type</th><th>Description or receipt</th><th>Charge</th><th>Payment</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${esc(row.date)}</td><td>${esc(row.type)}</td><td>${esc(row.reference)}</td><td>${row.charge ? money(row.charge) : "—"}</td><td>${row.payment ? money(row.payment) : "—"}</td></tr>`).join("") || '<tr><td colspan="5">No financial transactions recorded.</td></tr>'}</tbody><tfoot><tr><th colspan="3">Totals</th><th>${money(totalCharges)}</th><th>${money(totalPayments)}</th></tr></tfoot></table><button onclick="window.print()">Print or save as PDF</button></body></html>`,
   );
   popup.document.close();
 }
@@ -1122,6 +1160,12 @@ function wire() {
       .querySelectorAll(".print-receipt")
       .forEach(
         (button) => (button.onclick = () => printReceipt(button.dataset.id)),
+      );
+    document
+      .querySelectorAll(".print-statement")
+      .forEach(
+        (button) =>
+          (button.onclick = () => printStudentStatement(button.dataset.id)),
       );
     $("#payment-form").onsubmit = async (e) => {
       e.preventDefault();
