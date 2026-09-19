@@ -454,8 +454,64 @@ function attendance() {
       "Attendance",
       "Record daily attendance. Unmarked is never treated as absent.",
     ) +
-    `<section class="panel"><div class="toolbar"><label for="att-class">Class</label><select id="att-class">${options(schoolClasses(), selectedClass)}</select><label for="att-date">Date</label><input id="att-date" type="date" value="${selectedDate}" required><span class="badge ${count === list.length ? "" : "amber"}">${count}/${list.length} marked</span></div>${table(["Student", "Attendance"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><select class="attendance-select" data-student="${s.id}" aria-label="Attendance for ${esc(s.name)}">${options(["unmarked", "present", "late", "absent", "excused"], marks[s.id] || "unmarked")}</select></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="save-attendance">Save attendance</button><button class="button secondary" id="present-all">Mark class present</button><span class="status-text" id="attendance-status">${attendanceDraft ? "Unsaved changes" : record.saved ? `${schoolDataLive ? "Saved to Neon" : "Saved in browser"} · ${count === list.length ? "class complete" : "class incomplete"}` : "Not saved yet"}</span></div><div class="note">Attendance rate = present + late divided by present + late + absent. Excused and unmarked are excluded.</div></section>`
+    `<section class="panel"><div class="toolbar"><label for="att-class">Class</label><select id="att-class">${options(schoolClasses(), selectedClass)}</select><label for="att-date">Date</label><input id="att-date" type="date" value="${selectedDate}" required><span class="badge ${count === list.length ? "" : "amber"}">${count}/${list.length} marked</span></div>${table(["Student", "Attendance"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><select class="attendance-select" data-student="${s.id}" aria-label="Attendance for ${esc(s.name)}">${options(["unmarked", "present", "late", "absent", "excused"], marks[s.id] || "unmarked")}</select></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="save-attendance">Save attendance</button><button class="button secondary" id="present-all">Mark class present</button><button class="button secondary" id="print-attendance">Print report</button><button class="button secondary" id="attendance-csv">Download CSV</button><span class="status-text" id="attendance-status">${attendanceDraft ? "Unsaved changes" : record.saved ? `${schoolDataLive ? "Saved to Neon" : "Saved in browser"} · ${count === list.length ? "class complete" : "class incomplete"}` : "Not saved yet"}</span></div><div class="note">Attendance rate = present + late divided by present + late + absent. Excused and unmarked are excluded. Save changes before printing or downloading.</div></section>`
   );
+}
+function attendanceReportData() {
+  const marks = state.attendance[selectedDate]?.marks || {},
+    students = activeStudents()
+      .filter((student) => student.class === selectedClass)
+      .map((student) => ({
+        ...student,
+        attendanceStatus: marks[student.id] || "unmarked",
+      })),
+    summary = attendanceSummary(marks);
+  for (const status of ["present", "late", "absent", "excused"])
+    summary[status] = students.filter(
+      (student) => student.attendanceStatus === status,
+    ).length;
+  return { students, summary };
+}
+function printAttendanceReport() {
+  if (attendanceDraft) {
+    toast("Save the attendance changes before printing.");
+    return;
+  }
+  const { students, summary } = attendanceReportData(),
+    popup = window.open("", "_blank");
+  if (!popup) {
+    toast("Allow pop-ups to open the printable attendance report.");
+    return;
+  }
+  popup.document.write(
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Attendance ${esc(selectedDate)}</title><style>@page{size:A4 portrait;margin:14mm}body{font:12px Arial;color:#203330;margin:0;padding:16px}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:20px}h1{margin:0 0 6px}.summary{display:flex;gap:18px;flex-wrap:wrap;margin:14px 0}.summary span{padding:7px 10px;background:#edf5ef;border-radius:5px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce6e1;text-align:left}th{background:#eaf4ef}button{margin:18px 0;padding:10px 15px;background:#146a56;color:#fff;border:0;border-radius:6px}@media print{button{display:none}body{padding:0}}</style></head><body><header><h1>${esc(state.settings.name)}</h1><div>Attendance report · ${esc(selectedClass)} · ${esc(selectedDate)}</div></header><div class="summary"><span>Present: ${summary.present}</span><span>Late: ${summary.late}</span><span>Absent: ${summary.absent}</span><span>Excused: ${summary.excused}</span><span>Attendance rate: ${summary.rate === null ? "—" : summary.rate + "%"}</span></div><table><thead><tr><th>Student number</th><th>Student name</th><th>Status</th></tr></thead><tbody>${students.map((student) => `<tr><td>${esc(student.admission)}</td><td>${esc(student.name)}</td><td>${esc(student.attendanceStatus)}</td></tr>`).join("") || '<tr><td colspan="3">No active students in this class.</td></tr>'}</tbody></table><button onclick="window.print()">Print or save as PDF</button></body></html>`,
+  );
+  popup.document.close();
+}
+function downloadAttendanceCsv() {
+  if (attendanceDraft) {
+    toast("Save the attendance changes before downloading.");
+    return;
+  }
+  const { students } = attendanceReportData(),
+    content = csv([
+      ["Date", "Class", "Student number", "Student name", "Status"],
+      ...students.map((student) => [
+        selectedDate,
+        selectedClass,
+        student.admission,
+        student.name,
+        student.attendanceStatus,
+      ]),
+    ]),
+    blob = new Blob(["\ufeff" + content], { type: "text/csv;charset=utf-8" }),
+    url = URL.createObjectURL(blob),
+    anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${selectedClass.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${selectedDate}-attendance.csv`;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast("Attendance CSV downloaded.");
 }
 function fees() {
   return (
@@ -837,6 +893,8 @@ function wire() {
     }
   }
   if (view === "attendance") {
+    $("#print-attendance").onclick = printAttendanceReport;
+    $("#attendance-csv").onclick = downloadAttendanceCsv;
     const switchContext = async (name, value) => {
       if (attendanceDraft && !confirm("Discard unsaved attendance changes?")) {
         render();
