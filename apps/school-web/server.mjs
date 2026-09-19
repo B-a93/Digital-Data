@@ -334,6 +334,68 @@ const server = http.createServer(async (req, res) => {
       json(res, 405, { error: "Method not allowed" });
       return;
     }
+    if (pathname === "/api/school/students/promote") {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method !== "POST") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const data = await readJsonBody(req),
+        fromClass = String(data.fromClass || "").trim(),
+        toClass = String(data.toClass || "").trim(),
+        studentIds = Array.isArray(data.studentIds)
+          ? [...new Set(data.studentIds.map(String))]
+          : [];
+      if (
+        !fromClass ||
+        !toClass ||
+        fromClass === toClass ||
+        !studentIds.length ||
+        studentIds.length > 1000 ||
+        studentIds.some((id) => !/^[0-9a-f-]{36}$/i.test(id))
+      ) {
+        json(res, 400, {
+          error: "Choose students and two different valid classes.",
+        });
+        return;
+      }
+      const promoted = await transaction(async (client) => {
+        const classes = (
+          await client.query(
+            `SELECT id,name FROM classes WHERE school_id=$1 AND name=ANY($2::text[])`,
+            [context.school_id, [fromClass, toClass]],
+          )
+        ).rows;
+        const source = classes.find((item) => item.name === fromClass),
+          destination = classes.find((item) => item.name === toClass);
+        if (!source || !destination)
+          throw Object.assign(new Error("One of the classes was not found."), {
+            status: 404,
+          });
+        return (
+          await client.query(
+            `UPDATE students SET class_id=$4,updated_at=now()
+             WHERE school_id=$1 AND class_id=$2 AND status='active' AND id=ANY($3::uuid[])
+             RETURNING id`,
+            [context.school_id, source.id, studentIds, destination.id],
+          )
+        ).rowCount;
+      });
+      if (!promoted) {
+        json(res, 409, {
+          error: "No eligible active students were found in the source class.",
+        });
+        return;
+      }
+      await recordAudit(context, "students.promoted", "student", null, {
+        fromClass,
+        toClass,
+        count: promoted,
+      });
+      json(res, 200, { promoted });
+      return;
+    }
     if (pathname === "/api/school/staff") {
       const context = await requireSchoolContext(req);
       requireRole(context, "administrator");
