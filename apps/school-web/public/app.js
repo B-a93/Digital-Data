@@ -34,6 +34,7 @@ state.settings.feeTypes ||= [
   ]),
 ];
 state.settings.subjects ||= [];
+state.settings.gradeScale ||= { A: 80, B: 70, C: 60 };
 state.remarks ||= {};
 let view = "dashboard",
   selectedClass = state.settings.classes[0],
@@ -77,9 +78,10 @@ const schoolClasses = () => state.settings.classes;
 const schoolSubjects = () =>
   state.settings.subjects.length ? state.settings.subjects : ["General"];
 const resultGrade = (score, passMark = state.settings.pass) => {
-  if (score >= 80) return "A";
-  if (score >= Math.max(70, passMark)) return "B";
-  if (score >= Math.max(60, passMark)) return "C";
+  const scale = state.settings.gradeScale;
+  if (score >= scale.A) return "A";
+  if (score >= scale.B) return "B";
+  if (score >= scale.C) return "C";
   if (score >= passMark) return "D";
   return "F";
 };
@@ -927,7 +929,7 @@ function settings() {
         ? "Manage the school details, classes and fee types."
         : "Manage the school details, classes and fee types used in this demo.",
     ) +
-    `<div class="stack"><section class="panel"><form id="settings-form"><div class="form-grid"><div class="field"><label for="school">School display name</label><input name="school" id="school" value="${esc(state.settings.name)}" maxlength="80" required></div><div class="field"><label for="term-label">Term label</label><input name="term" id="term-label" value="${esc(state.settings.term)}" maxlength="60" required></div><div class="field"><label for="pass">Demo pass threshold /100</label><input name="pass" id="pass" type="number" min="0" max="100" step="1" required value="${state.settings.pass}"></div></div><div class="form-actions"><button class="button">Save settings</button></div><div class="error" id="form-error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Classes and grade levels</h2><small>${schoolClasses().length} configured</small></div><form id="class-form" class="toolbar"><input name="className" maxlength="60" required placeholder="e.g. Grade 10 · A" aria-label="New class name"><button class="button">Add class</button></form><div class="error" id="class-error" role="alert"></div>${table(
+    `<div class="stack"><section class="panel"><form id="settings-form"><div class="form-grid"><div class="field"><label for="school">School display name</label><input name="school" id="school" value="${esc(state.settings.name)}" maxlength="80" required></div><div class="field"><label for="term-label">Term label</label><input name="term" id="term-label" value="${esc(state.settings.term)}" maxlength="60" required></div><div class="field"><label for="pass">Minimum D / pass score</label><input name="pass" id="pass" type="number" min="0" max="100" step="1" required value="${state.settings.pass}"></div><div class="field"><label for="grade-a">Minimum A score</label><input name="gradeA" id="grade-a" type="number" min="0" max="100" step="1" required value="${state.settings.gradeScale.A}"></div><div class="field"><label for="grade-b">Minimum B score</label><input name="gradeB" id="grade-b" type="number" min="0" max="100" step="1" required value="${state.settings.gradeScale.B}"></div><div class="field"><label for="grade-c">Minimum C score</label><input name="gradeC" id="grade-c" type="number" min="0" max="100" step="1" required value="${state.settings.gradeScale.C}"></div></div><div class="form-actions"><button class="button">Save settings</button></div><div class="error" id="form-error" role="alert"></div><div class="note">Grades follow the saved minimums. D starts at the pass score; anything below it is F.</div></form></section><section class="panel"><div class="panel-heading"><h2>Classes and grade levels</h2><small>${schoolClasses().length} configured</small></div><form id="class-form" class="toolbar"><input name="className" maxlength="60" required placeholder="e.g. Grade 10 · A" aria-label="New class name"><button class="button">Add class</button></form><div class="error" id="class-error" role="alert"></div>${table(
       ["Class", "Students", "Action"],
       schoolClasses()
         .map((name) => {
@@ -1590,10 +1592,28 @@ function wire() {
       const f = new FormData(e.target),
         name = f.get("school").trim(),
         term = f.get("term").trim(),
-        pass = Number(f.get("pass"));
-      if (!name || !term || !Number.isInteger(pass) || pass < 0 || pass > 100) {
+        pass = Number(f.get("pass")),
+        gradeScale = {
+          A: Number(f.get("gradeA")),
+          B: Number(f.get("gradeB")),
+          C: Number(f.get("gradeC")),
+        };
+      if (
+        !name ||
+        !term ||
+        !Number.isInteger(pass) ||
+        pass < 0 ||
+        pass > 100 ||
+        !Number.isInteger(gradeScale.A) ||
+        !Number.isInteger(gradeScale.B) ||
+        !Number.isInteger(gradeScale.C) ||
+        gradeScale.A > 100 ||
+        gradeScale.A <= gradeScale.B ||
+        gradeScale.B <= gradeScale.C ||
+        gradeScale.C < pass
+      ) {
         $("#form-error").textContent =
-          "Enter a name, term and valid threshold.";
+          "Use descending grade minimums: A above B, B above C, and C at or above the pass score.";
         return;
       }
       if (schoolDataLive) {
@@ -1602,10 +1622,16 @@ function wire() {
         try {
           await schoolApi("/api/school/settings", {
             method: "PATCH",
-            body: JSON.stringify({ name, term, passMark: pass }),
+            body: JSON.stringify({ name, term, passMark: pass, gradeScale }),
           });
-          activeSchool = { ...activeSchool, name, term, passMark: pass };
-          state.settings = { ...state.settings, name, term, pass };
+          activeSchool = {
+            ...activeSchool,
+            name,
+            term,
+            passMark: pass,
+            gradeScale,
+          };
+          state.settings = { ...state.settings, name, term, pass, gradeScale };
           render();
           toast("School settings saved to Neon.");
         } catch (err) {
@@ -1614,7 +1640,7 @@ function wire() {
         }
         return;
       }
-      state.settings = { ...state.settings, name, term, pass };
+      state.settings = { ...state.settings, name, term, pass, gradeScale };
       const persisted = save();
       render();
       if (persisted) toast("Demo settings saved.");
@@ -2150,6 +2176,11 @@ async function showPortal(session) {
     state.settings.name = activeSchool.name;
     state.settings.term = activeSchool.term;
     state.settings.pass = activeSchool.passMark;
+    state.settings.gradeScale = activeSchool.gradeScale || {
+      A: 80,
+      B: 70,
+      C: 60,
+    };
     await loadSchoolStudents();
     if (role === "Administrator" || role === "Finance")
       await loadSchoolFinance();
