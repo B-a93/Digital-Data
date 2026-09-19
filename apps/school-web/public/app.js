@@ -47,7 +47,8 @@ let view = "dashboard",
   schoolDataLive = false,
   schoolClassIds = new Map(),
   schoolFeeTypeIds = new Map(),
-  platformSchools = [];
+  platformSchools = [],
+  schoolStaff = [];
 let attendanceDraft = null;
 function localDate() {
   const d = new Date();
@@ -98,6 +99,7 @@ const navItems = [
   ["fees", "◈", "Fees & payments"],
   ["results", "▤", "Results"],
   ["reports", "↗", "Reports"],
+  ["staff", "♧", "Staff"],
   ["settings", "⚙", "Settings"],
 ];
 const visibleNav = () =>
@@ -159,6 +161,7 @@ function render() {
     fees,
     results,
     reports,
+    staff,
     settings,
     platform,
   }[view]();
@@ -240,6 +243,9 @@ async function loadSchoolFinance() {
     reference: payment.receipt_number,
     date: String(payment.paid_on).slice(0, 10),
   }));
+}
+async function loadSchoolStaff() {
+  schoolStaff = (await schoolApi("/api/school/staff")).staff;
 }
 async function loadSchoolAttendance(
   date = selectedDate,
@@ -478,6 +484,15 @@ function reports() {
       .join(
         "",
       )}<div class="note">${schoolDataLive ? "Exports contain the current school records stored in Neon." : "Exports contain this browser’s fictional demonstration records."}</div></section></div>`
+  );
+}
+function staff() {
+  return (
+    heading(
+      "Staff management",
+      "Invite teachers and finance staff to this school workspace.",
+    ) +
+    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>Invite a staff member</h2><span class="badge gray">Administrator only</span></div><form id="staff-form"><div class="form-grid"><div class="field"><label for="staff-name">Full name</label><input id="staff-name" name="fullName" maxlength="100" required></div><div class="field"><label for="staff-email">Email address</label><input id="staff-email" name="email" type="email" required></div><div class="field"><label for="staff-role">Role</label><select id="staff-role" name="role"><option value="teacher">Teacher</option><option value="finance">Finance</option></select></div></div><div class="form-actions"><button class="button">Send invitation</button><span class="status-text">Personal email addresses can be used.</span></div><div id="staff-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Invited staff</h2><small>${schoolStaff.length} staff</small></div>${table(["Staff member", "Role", "Status", "Invited"], schoolStaff.map((member) => `<tr><td><span class="student-name">${esc(member.full_name)}</span><span class="sub">${esc(member.email)}</span></td><td>${esc(member.role === "finance" ? "Finance" : "Teacher")}</td><td><span class="badge ${member.invitation_status === "accepted" ? "" : "amber"}">${esc(member.invitation_status)}</span></td><td>${esc(new Date(member.invited_at).toLocaleDateString("en-GB"))}</td></tr>`).join(""))}</section></div>`
   );
 }
 function settings() {
@@ -1108,6 +1123,26 @@ function wire() {
         }),
     );
   }
+  if (view === "staff") {
+    $("#staff-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const button = e.target.querySelector(".button");
+      button.disabled = true;
+      try {
+        await schoolApi("/api/school/staff", {
+          method: "POST",
+          body: JSON.stringify(Object.fromEntries(new FormData(e.target))),
+        });
+        e.target.reset();
+        await loadSchoolStaff();
+        render();
+        toast("Staff invitation email sent.");
+      } catch (err) {
+        $("#staff-error").textContent = err.message;
+        button.disabled = false;
+      }
+    };
+  }
 }
 function download(type) {
   let rows;
@@ -1373,6 +1408,7 @@ async function showPortal(session) {
       await loadSchoolAttendance();
       await loadSchoolResults();
     }
+    if (role === "Administrator") await loadSchoolStaff();
   }
   $("#workspace-status").textContent = activeSchool ? "PILOT" : "DEMO";
   $("#workspace-message").textContent = activeSchool
@@ -1418,8 +1454,9 @@ async function initializeAuth() {
         data = await response.json();
       if (!response.ok) throw Error(data.error || "Invitation unavailable.");
       $("#invitation-title").textContent = `Join ${data.invitation.name}`;
-      $("#invitation-details").textContent =
-        "Create your administrator account to activate this school workspace.";
+      $("#invitation-details").textContent = data.invitation.role
+        ? `Create your ${data.invitation.role === "finance" ? "Finance" : "Teacher"} account to join this school workspace.`
+        : "Create your administrator account to activate this school workspace.";
       $("#invitation-name").value = data.invitation.administrator_name;
       $("#invitation-email").value = data.invitation.administrator_email;
       const session = sessionFromResult(await auth.getSession());
