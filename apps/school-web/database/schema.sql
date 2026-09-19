@@ -41,6 +41,22 @@ CREATE TABLE IF NOT EXISTS school_users (
   UNIQUE (school_id, auth_user_id)
 );
 
+CREATE TABLE IF NOT EXISTS staff_invitations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  full_name text NOT NULL,
+  email text NOT NULL,
+  role text NOT NULL CHECK (role IN ('teacher', 'finance')),
+  invitation_status text NOT NULL DEFAULT 'sent',
+  invitation_token_hash text,
+  invitation_expires_at timestamptz,
+  invited_at timestamptz NOT NULL DEFAULT now(),
+  accepted_at timestamptz,
+  auth_user_id text,
+  UNIQUE (school_id, email)
+);
+CREATE INDEX IF NOT EXISTS staff_invitation_token_idx ON staff_invitations(invitation_token_hash);
+
 CREATE TABLE IF NOT EXISTS classes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
