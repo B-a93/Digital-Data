@@ -539,6 +539,122 @@ function printStudentIdCards() {
   );
   popup.document.close();
 }
+async function openStudentProfile(studentId) {
+  const popup = window.open("", "_blank");
+  if (!popup) {
+    toast("Allow pop-ups to open the student profile.");
+    return;
+  }
+  popup.document.write(
+    "<p style='font-family:Arial;padding:24px'>Preparing student profile…</p>",
+  );
+  try {
+    let student, attendance, finance, academicResults, permissions;
+    if (schoolDataLive) {
+      const data = await schoolApi(`/api/school/students/${studentId}/profile`);
+      student = {
+        id: data.student.id,
+        admission: data.student.student_number,
+        name: data.student.full_name,
+        class: data.student.class_name || "Unassigned",
+        guardianName: data.student.guardian_name || "",
+        guardianPhone: data.student.guardian_phone || "",
+        status: data.student.status,
+        joined: data.student.created_at,
+      };
+      attendance = data.attendance;
+      finance = data.finance
+        ? {
+            charges: Number(data.finance.charges),
+            payments: Number(data.finance.payments),
+          }
+        : null;
+      academicResults = data.results.map((result) => ({
+        subject: result.subject_name,
+        score: Number(result.score),
+        maximum: Number(result.maximum_score),
+        remark: result.remark || "",
+      }));
+      permissions = data.permissions;
+    } else {
+      student = state.students.find((item) => item.id === studentId);
+      const values = Object.values(state.attendance)
+        .map((record) => record.marks?.[studentId])
+        .filter(Boolean);
+      attendance = {
+        marked: values.length,
+        present: values.filter((value) => value === "present").length,
+        late: values.filter((value) => value === "late").length,
+        absent: values.filter((value) => value === "absent").length,
+        excused: values.filter((value) => value === "excused").length,
+      };
+      finance = {
+        charges: state.charges
+          .filter((item) => item.studentId === studentId)
+          .reduce((sum, item) => sum + item.amount, 0),
+        payments: state.payments
+          .filter((item) => item.studentId === studentId)
+          .reduce((sum, item) => sum + item.amount, 0),
+      };
+      const latest = new Map();
+      state.published
+        .filter((item) => item.term === state.settings.term)
+        .forEach((item) => latest.set(item.subject || "General", item));
+      academicResults = [...latest.values()]
+        .map((snapshot) => {
+          const entry = snapshot.entries.find(
+            (item) => (item.studentId || item.id) === studentId,
+          );
+          return entry
+            ? {
+                subject: snapshot.subject || "General",
+                score: Number(entry.score),
+                maximum: 100,
+                remark: entry.remark || "",
+              }
+            : null;
+        })
+        .filter(Boolean);
+      permissions = { academic: true, finance: true };
+    }
+    if (!student) throw Error("Student not found.");
+    const eligible = attendance
+        ? Number(attendance.present) +
+          Number(attendance.late) +
+          Number(attendance.absent)
+        : 0,
+      attendanceRate = eligible
+        ? Math.round(
+            ((Number(attendance.present) + Number(attendance.late)) /
+              eligible) *
+              100,
+          )
+        : null,
+      financeBalance = finance ? finance.charges - finance.payments : 0,
+      academicSection = permissions.academic
+        ? `<section><h2>Current-term results</h2>${table(
+            ["Subject", "Score", "Grade", "Outcome", "Remark"],
+            academicResults
+              .map((result) => {
+                const percentage = (result.score / result.maximum) * 100;
+                return `<tr><td>${esc(result.subject)}</td><td>${result.score} / ${result.maximum}</td><td>${resultGrade(percentage)}</td><td>${percentage >= state.settings.pass ? "Pass" : "Below threshold"}</td><td>${esc(result.remark || "—")}</td></tr>`;
+              })
+              .join(""),
+          )}</section><section><h2>Attendance summary</h2><div class="summary"><span>Marked: <strong>${Number(attendance?.marked || 0)}</strong></span><span>Present: <strong>${Number(attendance?.present || 0)}</strong></span><span>Late: <strong>${Number(attendance?.late || 0)}</strong></span><span>Absent: <strong>${Number(attendance?.absent || 0)}</strong></span><span>Excused: <strong>${Number(attendance?.excused || 0)}</strong></span><span>Rate: <strong>${attendanceRate === null ? "—" : attendanceRate + "%"}</strong></span></div></section>`
+        : "",
+      financeSection = permissions.finance
+        ? `<section><h2>Financial summary</h2><div class="summary"><span>Total charges: <strong>${money(finance.charges)}</strong></span><span>Total paid: <strong>${money(finance.payments)}</strong></span><span>Balance: <strong>${money(financeBalance)}</strong></span></div></section>`
+        : "";
+    popup.document.open();
+    popup.document.write(
+      `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(student.admission)} Student Profile</title><style>@page{size:A4 portrait;margin:14mm}body{font:12px Arial;color:#203330;margin:0;padding:16px}header{border-bottom:3px solid #146a56;padding-bottom:14px;margin-bottom:20px}h1{margin:0 0 6px}h2{font-size:16px;margin:24px 0 10px}.details{display:grid;grid-template-columns:1fr 1fr;gap:9px 24px}.summary{display:flex;gap:10px;flex-wrap:wrap}.summary span{padding:8px 11px;background:#edf5ef;border-radius:5px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce6e1;text-align:left}th{background:#eaf4ef}.print{margin:20px 0;padding:10px 15px;background:#146a56;color:white;border:0;border-radius:6px}@media(max-width:600px){.details{grid-template-columns:1fr}table{min-width:650px}}@media print{.print{display:none}body{padding:0}}</style></head><body><header><h1>${esc(state.settings.name)}</h1><div>Complete Student Profile · ${esc(state.settings.term)}</div></header><div class="details"><div><strong>Student:</strong> ${esc(student.name)}</div><div><strong>Student number:</strong> ${esc(student.admission)}</div><div><strong>Class:</strong> ${esc(student.class)}</div><div><strong>Status:</strong> ${esc(student.status || "active")}</div><div><strong>Guardian:</strong> ${esc(student.guardianName || "—")}</div><div><strong>Guardian phone:</strong> ${esc(student.guardianPhone || "—")}</div></div>${academicSection}${financeSection}<button class="print" onclick="window.print()">Print or save as PDF</button></body></html>`,
+    );
+    popup.document.close();
+  } catch (error) {
+    popup.close();
+    toast(error.message);
+  }
+}
 function promotionPanel() {
   const promotionStudents = activeStudents().filter(
     (student) => student.class === promotionFrom,
@@ -1145,6 +1261,20 @@ function wire() {
   }
   if (view === "students") {
     $("#print-id-cards").onclick = printStudentIdCards;
+    document
+      .querySelectorAll(".edit-student")
+      .forEach((button) =>
+        button.insertAdjacentHTML(
+          "beforebegin",
+          `<button class="text-button student-profile" data-id="${esc(button.dataset.id)}">Profile</button> · `,
+        ),
+      );
+    document
+      .querySelectorAll(".student-profile")
+      .forEach(
+        (button) =>
+          (button.onclick = () => openStudentProfile(button.dataset.id)),
+      );
     $("#student-import-panel").insertAdjacentHTML("afterend", promotionPanel());
     $("#promotion-from").onchange = (e) => {
       promotionFrom = e.target.value;
