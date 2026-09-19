@@ -39,6 +39,7 @@ state.remarks ||= {};
 let view = "dashboard",
   selectedClass = state.settings.classes[0],
   selectedSubject = state.settings.subjects?.[0] || "General",
+  selectedResultTerm = state.settings.term,
   selectedDate = localDate(),
   search = "",
   studentClass = "",
@@ -58,6 +59,7 @@ let view = "dashboard",
   platformSchools = [],
   schoolStaff = [],
   schoolActivity = [];
+let resultTerms = [state.settings.term];
 let attendanceDraft = null;
 function localDate() {
   const d = new Date();
@@ -361,10 +363,11 @@ async function loadSchoolAttendance(
 async function loadSchoolResults(
   className = selectedClass,
   subjectName = selectedSubject,
+  term = selectedResultTerm,
 ) {
   if (!schoolDataLive || !className) return;
   const data = await schoolApi(
-    `/api/school/results?class=${encodeURIComponent(className)}&subject=${encodeURIComponent(subjectName)}&term=${encodeURIComponent(state.settings.term)}`,
+    `/api/school/results?class=${encodeURIComponent(className)}&subject=${encodeURIComponent(subjectName)}&term=${encodeURIComponent(term)}`,
   );
   const classStudentIds = new Set(
     state.students
@@ -378,7 +381,7 @@ async function loadSchoolResults(
       !(
         item.class === className &&
         item.subject === subjectName &&
-        item.term === state.settings.term
+        item.term === term
       ),
   );
   if (!data.assessment) return;
@@ -400,6 +403,20 @@ async function loadSchoolResults(
       remark: mark.remark || "",
     })),
   });
+}
+async function loadResultTerms() {
+  if (!schoolDataLive) {
+    resultTerms = [
+      ...new Set([
+        state.settings.term,
+        ...state.published.map((item) => item.term).filter(Boolean),
+      ]),
+    ];
+    return;
+  }
+  resultTerms = (await schoolApi("/api/school/result-terms")).terms;
+  if (!resultTerms.includes(selectedResultTerm))
+    selectedResultTerm = state.settings.term;
 }
 function dashboard() {
   const charges = state.charges.reduce((s, c) => s + c.amount, 0),
@@ -681,12 +698,13 @@ function openWhatsAppReminder(studentId) {
 }
 function results() {
   const list = activeStudents().filter((s) => s.class === selectedClass),
+    historical = selectedResultTerm !== state.settings.term,
     snap = state.published
       .filter(
         (p) =>
           p.class === selectedClass &&
           (p.subject || "General") === selectedSubject &&
-          p.term === state.settings.term,
+          p.term === selectedResultTerm,
       )
       .at(-1);
   return (
@@ -697,7 +715,7 @@ function results() {
         : "Prepare a single demo assessment, then publish a versioned snapshot.",
       '<button class="button secondary" id="print-report-cards">Print class report cards</button>',
     ) +
-    `<section class="panel"><div class="toolbar"><label for="res-class">Class</label><select id="res-class">${options(schoolClasses(), selectedClass)}</select><label for="res-subject">Subject</label><select id="res-subject">${options(schoolSubjects(), selectedSubject)}</select><span class="badge gray">Draft assessment · /100</span><span class="status-text">Pass threshold: ${state.settings.pass}</span></div>${table(["Student", "Draft mark /100", "Teacher remark"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><input class="money-input mark-input" type="number" min="0" max="100" step="0.01" data-student="${s.id}" aria-label="Mark for ${esc(s.name)}" value="${state.marks[s.id] ?? ""}"></td><td><input class="remark-input" maxlength="160" data-student="${s.id}" aria-label="Remark for ${esc(s.name)}" placeholder="Optional remark" value="${esc(state.remarks[s.id] || "")}"></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="publish">Approve & publish ${schoolDataLive ? "results" : "demo results"}</button><span class="status-text">${schoolDataLive ? "Draft marks are stored securely in Neon." : "Draft marks save on change in this browser."}</span></div><div class="error" id="form-error" role="alert"></div><div class="note">Published results are versioned by class, subject and term, and do not change when draft marks are edited.</div></section>${snap ? `<section class="panel"><div class="panel-heading"><div><h2>${esc(snap.subject || "General")} · published version ${snap.version}</h2><small>${esc(snap.term)}</small></div><div class="quick-actions"><button class="button secondary" id="print-results">Print report</button><button class="button secondary" id="results-csv">Download CSV</button></div></div>${table(["Student", "Published score", "Grade", "Outcome", "Remark"], snap.entries.map((e) => `<tr><td>${esc(e.name)}</td><td>${e.score}</td><td>${resultGrade(e.score, snap.pass)}</td><td><span class="badge ${e.score >= snap.pass ? "" : "amber"}">${e.score >= snap.pass ? "Pass" : "Below threshold"}</span></td><td>${esc(e.remark || "—")}</td></tr>`).join(""))}</section>` : ""}`
+    `<section class="panel"><div class="toolbar"><label for="res-term">Term</label><select id="res-term">${options(resultTerms, selectedResultTerm)}</select><label for="res-class">Class</label><select id="res-class">${options(schoolClasses(), selectedClass)}</select><label for="res-subject">Subject</label><select id="res-subject">${options(schoolSubjects(), selectedSubject)}</select><span class="badge ${historical ? "amber" : "gray"}">${historical ? "Historical · read only" : "Current term · /100"}</span><span class="status-text">Pass threshold: ${state.settings.pass}</span></div>${table(["Student", historical ? "Published mark /100" : "Draft mark /100", "Teacher remark"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><input class="money-input mark-input" type="number" min="0" max="100" step="0.01" data-student="${s.id}" aria-label="Mark for ${esc(s.name)}" value="${state.marks[s.id] ?? ""}" ${historical ? "disabled" : ""}></td><td><input class="remark-input" maxlength="160" data-student="${s.id}" aria-label="Remark for ${esc(s.name)}" placeholder="Optional remark" value="${esc(state.remarks[s.id] || "")}" ${historical ? "disabled" : ""}></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="publish" ${historical ? "disabled" : ""}>Approve & publish ${schoolDataLive ? "results" : "demo results"}</button><span class="status-text">${historical ? "Historical results cannot be changed." : schoolDataLive ? "Draft marks are stored securely in Neon." : "Draft marks save on change in this browser."}</span></div><div class="error" id="form-error" role="alert"></div><div class="note">Published results are versioned by class, subject and term, and do not change when draft marks are edited.</div></section>${snap ? `<section class="panel"><div class="panel-heading"><div><h2>${esc(snap.subject || "General")} · published version ${snap.version}</h2><small>${esc(snap.term)}</small></div><div class="quick-actions"><button class="button secondary" id="print-results">Print report</button><button class="button secondary" id="results-csv">Download CSV</button></div></div>${table(["Student", "Published score", "Grade", "Outcome", "Remark"], snap.entries.map((e) => `<tr><td>${esc(e.name)}</td><td>${e.score}</td><td>${resultGrade(e.score, snap.pass)}</td><td><span class="badge ${e.score >= snap.pass ? "" : "amber"}">${e.score >= snap.pass ? "Pass" : "Below threshold"}</span></td><td>${esc(e.remark || "—")}</td></tr>`).join(""))}</section>` : ""}`
   );
 }
 async function printClassReportCards() {
@@ -713,7 +731,7 @@ async function printClassReportCards() {
     let students, publishedResults;
     if (schoolDataLive) {
       const data = await schoolApi(
-        `/api/school/report-cards?class=${encodeURIComponent(selectedClass)}&term=${encodeURIComponent(state.settings.term)}`,
+        `/api/school/report-cards?class=${encodeURIComponent(selectedClass)}&term=${encodeURIComponent(selectedResultTerm)}`,
       );
       students = data.students.map((student) => ({
         id: student.id,
@@ -727,6 +745,18 @@ async function printClassReportCards() {
         maximum: Number(result.maximum_score),
         remark: result.remark || "",
       }));
+      students = [
+        ...new Map(
+          [
+            ...students,
+            ...data.results.map((result) => ({
+              id: result.student_id,
+              admission: result.student_number,
+              name: result.full_name,
+            })),
+          ].map((student) => [student.id, student]),
+        ).values(),
+      ].sort((a, b) => a.name.localeCompare(b.name));
     } else {
       students = activeStudents()
         .filter((student) => student.class === selectedClass)
@@ -739,7 +769,7 @@ async function printClassReportCards() {
       state.published
         .filter(
           (item) =>
-            item.class === selectedClass && item.term === state.settings.term,
+            item.class === selectedClass && item.term === selectedResultTerm,
         )
         .forEach((item) => latest.set(item.subject || "General", item));
       publishedResults = [...latest.values()].flatMap((snapshot) =>
@@ -777,7 +807,11 @@ async function printClassReportCards() {
             "",
           )}</tbody></table><div class="summary"><span>Average: <strong>${average.toFixed(1)}%</strong></span><span>Overall grade: <strong>${resultGrade(average)}</strong></span><span>Subjects passed: <strong>${passed} of ${marks.length}</strong></span><span>Overall: <strong>${marks.length && average >= state.settings.pass ? "Pass" : "Below threshold"}</strong></span></div><div class="signatures"><span>Class teacher</span><span>Head teacher</span></div></section>`;
       })
-      .join("");
+      .join("")
+      .replaceAll(
+        `Student Report Card · ${esc(state.settings.term)}`,
+        `Student Report Card · ${esc(selectedResultTerm)}`,
+      );
     popup.document.open();
     popup.document.write(
       `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(selectedClass)} Report Cards</title><style>@page{size:A4 portrait;margin:14mm}body{font:12px Arial;color:#203330;margin:0}.report-card{min-height:250mm;page-break-after:always;box-sizing:border-box;padding:10px}.report-card:last-of-type{page-break-after:auto}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:20px}h1{margin:0 0 6px}.details{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:20px}table{width:100%;border-collapse:collapse}th,td{padding:9px;border:1px solid #dce6e1;text-align:left}th{background:#eaf4ef}.summary{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0}.summary span{padding:8px 11px;background:#edf5ef;border-radius:5px}.signatures{display:flex;justify-content:space-between;margin-top:55px}.signatures span{width:38%;border-top:1px solid #61706c;padding-top:7px;text-align:center}.print{position:fixed;right:18px;top:18px;padding:10px 15px;background:#146a56;color:#fff;border:0;border-radius:6px}@media(max-width:600px){.details{grid-template-columns:1fr}.report-card{overflow-x:auto}table{min-width:480px}}@media print{.print{display:none}.report-card{padding:0}}</style></head><body><button class="print" onclick="window.print()">Print or save as PDF</button>${cards}</body></html>`,
@@ -794,7 +828,7 @@ function currentPublishedResult() {
       (item) =>
         item.class === selectedClass &&
         (item.subject || "General") === selectedSubject &&
-        item.term === state.settings.term,
+        item.term === selectedResultTerm,
     )
     .at(-1);
 }
@@ -1555,11 +1589,29 @@ function wire() {
     $("#print-report-cards").onclick = printClassReportCards;
     if ($("#print-results")) $("#print-results").onclick = printResultsReport;
     if ($("#results-csv")) $("#results-csv").onclick = downloadResultsCsv;
+    $("#res-term").onchange = async (e) => {
+      selectedResultTerm = e.target.value;
+      if (schoolDataLive)
+        try {
+          await loadSchoolResults(
+            selectedClass,
+            selectedSubject,
+            selectedResultTerm,
+          );
+        } catch (err) {
+          toast(err.message);
+        }
+      render();
+    };
     $("#res-class").onchange = async (e) => {
       selectedClass = e.target.value;
       if (schoolDataLive)
         try {
-          await loadSchoolResults(selectedClass, selectedSubject);
+          await loadSchoolResults(
+            selectedClass,
+            selectedSubject,
+            selectedResultTerm,
+          );
         } catch (err) {
           toast(err.message);
         }
@@ -1569,7 +1621,11 @@ function wire() {
       selectedSubject = e.target.value;
       if (schoolDataLive)
         try {
-          await loadSchoolResults(selectedClass, selectedSubject);
+          await loadSchoolResults(
+            selectedClass,
+            selectedSubject,
+            selectedResultTerm,
+          );
         } catch (err) {
           toast(err.message);
         }
@@ -1649,11 +1705,13 @@ function wire() {
             }),
           });
           await loadSchoolResults(selectedClass, selectedSubject);
+          await loadResultTerms();
           render();
           toast("Results published to Neon.");
           return;
         }
         const snap = publishResults(state, selectedClass, selectedSubject);
+        await loadResultTerms();
         const persisted = save();
         render();
         if (persisted)
@@ -1717,6 +1775,8 @@ function wire() {
             gradeScale,
           };
           state.settings = { ...state.settings, name, term, pass, gradeScale };
+          selectedResultTerm = term;
+          await loadResultTerms();
           render();
           toast("School settings saved to Neon.");
         } catch (err) {
@@ -1726,6 +1786,8 @@ function wire() {
         return;
       }
       state.settings = { ...state.settings, name, term, pass, gradeScale };
+      selectedResultTerm = term;
+      await loadResultTerms();
       const persisted = save();
       render();
       if (persisted) toast("Demo settings saved.");
@@ -2260,6 +2322,7 @@ async function showPortal(session) {
   if (activeSchool) {
     state.settings.name = activeSchool.name;
     state.settings.term = activeSchool.term;
+    selectedResultTerm = activeSchool.term;
     state.settings.pass = activeSchool.passMark;
     state.settings.gradeScale = activeSchool.gradeScale || {
       A: 80,
@@ -2275,6 +2338,7 @@ async function showPortal(session) {
     }
     if (role === "Administrator" || role === "Teacher") {
       await loadSchoolAttendance();
+      await loadResultTerms();
       await loadSchoolResults();
     }
     if (role === "Administrator") {
