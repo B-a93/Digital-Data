@@ -103,7 +103,15 @@ const navItems = [
 const visibleNav = () =>
   isPlatformOwner
     ? [["platform", "◆", "School onboarding"], ...navItems]
-    : navItems;
+    : !schoolDataLive || role === "Administrator"
+      ? navItems
+      : role === "Teacher"
+        ? navItems.filter(([id]) =>
+            ["dashboard", "students", "attendance", "results"].includes(id),
+          )
+        : navItems.filter(([id]) =>
+            ["dashboard", "students", "fees", "reports"].includes(id),
+          );
 function heading(title, subtitle, action = "") {
   return `<div class="page-heading"><div><h1>${title}</h1><p>${subtitle}</p></div>${action}</div>`;
 }
@@ -1260,10 +1268,6 @@ function printPaymentReport(group = "all") {
   );
   popup.document.close();
 }
-$("#role").onchange = (e) => {
-  role = e.target.value;
-  render();
-};
 $("#reset").onclick = () => {
   if (
     !confirm(
@@ -1347,14 +1351,28 @@ async function showPortal(session) {
   if (!response.ok) throw Error(account.error || "Account access unavailable.");
   isPlatformOwner = account.user.role === "platform_owner";
   activeSchool = account.school;
+  role =
+    account.user.role === "teacher"
+      ? "Teacher"
+      : account.user.role === "finance"
+        ? "Finance"
+        : "Administrator";
+  $("#role").textContent = isPlatformOwner ? "Platform Owner" : role;
   if (activeSchool) {
     state.settings.name = activeSchool.name;
     state.settings.term = activeSchool.term;
     state.settings.pass = activeSchool.passMark;
     await loadSchoolStudents();
-    await loadSchoolFinance();
-    await loadSchoolAttendance();
-    await loadSchoolResults();
+    if (role === "Administrator" || role === "Finance")
+      await loadSchoolFinance();
+    else {
+      state.charges = [];
+      state.payments = [];
+    }
+    if (role === "Administrator" || role === "Teacher") {
+      await loadSchoolAttendance();
+      await loadSchoolResults();
+    }
   }
   $("#workspace-status").textContent = activeSchool ? "PILOT" : "DEMO";
   $("#workspace-message").textContent = activeSchool
