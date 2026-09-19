@@ -1325,6 +1325,52 @@ const server = http.createServer(async (req, res) => {
       json(res, 405, { error: "Method not allowed" });
       return;
     }
+    if (pathname === "/api/school/report-cards") {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator", "teacher");
+      if (req.method !== "GET") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const className = String(
+          requestUrl.searchParams.get("class") || "",
+        ).trim(),
+        term = String(requestUrl.searchParams.get("term") || "").trim();
+      if (!className || !term) {
+        json(res, 400, { error: "Choose a valid class and term." });
+        return;
+      }
+      const students = await query(
+          `SELECT st.id,st.student_number,st.full_name
+           FROM students st JOIN classes c ON c.id=st.class_id
+           WHERE st.school_id=$1 AND c.name=$2 AND st.status='active'
+           ORDER BY st.full_name`,
+          [context.school_id, className],
+        ),
+        results = await query(
+          `WITH latest AS (
+             SELECT DISTINCT ON (COALESCE(su.name,'General'))
+               a.id,COALESCE(su.name,'General') AS subject_name,a.maximum_score
+             FROM assessments a
+             JOIN classes c ON c.id=a.class_id
+             LEFT JOIN subjects su ON su.id=a.subject_id
+             WHERE a.school_id=$1 AND c.name=$2 AND a.term=$3
+               AND a.published_at IS NOT NULL
+             ORDER BY COALESCE(su.name,'General'),a.published_at DESC
+           )
+           SELECT am.student_id,l.subject_name,am.score,l.maximum_score
+           FROM latest l JOIN assessment_marks am ON am.assessment_id=l.id
+           ORDER BY l.subject_name`,
+          [context.school_id, className, term],
+        );
+      json(res, 200, {
+        className,
+        term,
+        students: students.rows,
+        results: results.rows,
+      });
+      return;
+    }
     if (pathname === "/api/platform/schools") {
       await requirePlatformOwner(req);
       if (req.method === "GET") {
