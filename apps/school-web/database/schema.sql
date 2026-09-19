@@ -87,6 +87,20 @@ CREATE TABLE IF NOT EXISTS subjects (
   UNIQUE (school_id, name)
 );
 
+CREATE TABLE IF NOT EXISTS timetable_entries (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  class_id uuid NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  subject_id uuid NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+  weekday smallint NOT NULL CHECK (weekday BETWEEN 1 AND 7),
+  start_time time NOT NULL,
+  end_time time NOT NULL,
+  teacher_name text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (end_time > start_time),
+  UNIQUE (school_id, class_id, weekday, start_time)
+);
+
 CREATE TABLE IF NOT EXISTS students (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
