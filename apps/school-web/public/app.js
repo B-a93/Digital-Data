@@ -49,7 +49,8 @@ let view = "dashboard",
   schoolClassIds = new Map(),
   schoolFeeTypeIds = new Map(),
   platformSchools = [],
-  schoolStaff = [];
+  schoolStaff = [],
+  schoolActivity = [];
 let attendanceDraft = null;
 function localDate() {
   const d = new Date();
@@ -103,6 +104,7 @@ const navItems = [
   ["results", "▤", "Results"],
   ["reports", "↗", "Reports"],
   ["staff", "♧", "Staff"],
+  ["activity", "◷", "Activity"],
   ["settings", "⚙", "Settings"],
 ];
 const visibleNav = () =>
@@ -204,6 +206,7 @@ function render() {
     results,
     reports,
     staff,
+    activity,
     settings,
     platform,
   }[view]();
@@ -289,6 +292,9 @@ async function loadSchoolFinance() {
 }
 async function loadSchoolStaff() {
   schoolStaff = (await schoolApi("/api/school/staff")).staff;
+}
+async function loadSchoolActivity() {
+  schoolActivity = (await schoolApi("/api/school/activity")).activity;
 }
 async function loadSchoolAttendance(
   date = selectedDate,
@@ -670,6 +676,33 @@ function reports() {
       .join(
         "",
       )}<div class="note">${schoolDataLive ? "Exports contain the current school records stored in Neon." : "Exports contain this browser’s fictional demonstration records."}</div></section></div>`
+  );
+}
+function activityDescription(item) {
+  const details = item.details || {};
+  return (
+    {
+      "student.created": `Registered ${details.fullName || "a student"} (${details.studentNumber || ""})`,
+      "student.updated": `Updated ${details.fullName || "a student"}`,
+      "student.status_changed": `Changed student status to ${details.status || "unknown"}`,
+      "students.imported": `Imported ${details.count || 0} students`,
+      "payment.recorded": `Recorded payment ${details.receiptNumber || ""} for ${money(Number(details.amountBututs || 0))}`,
+      "charge.created": `Added ${details.description || "fee"} charge of ${money(Number(details.amountBututs || 0))}`,
+      "class_charge.created": `Charged ${details.students || 0} students in ${details.className || "a class"}`,
+      "attendance.saved": `Saved attendance for ${details.className || "a class"} on ${details.date || ""}`,
+      "results.published": `Published ${details.className || "class"} results, version ${details.version || ""}`,
+      "settings.updated": `Updated school settings for ${details.term || "the current term"}`,
+    }[item.action] || item.action.replaceAll(".", " ")
+  );
+}
+function activity() {
+  return (
+    heading(
+      "Activity log",
+      "Review important changes made in this school workspace.",
+      '<button class="button secondary" id="refresh-activity">Refresh</button>',
+    ) +
+    `<section class="panel"><div class="panel-heading"><h2>Recent activity</h2><small>Latest ${schoolActivity.length} events</small></div>${table(["Date and time", "User", "Activity"], schoolActivity.map((item) => `<tr><td>${esc(new Date(item.created_at).toLocaleString("en-GB"))}</td><td>${esc(item.actor_email || "School user")}</td><td>${esc(activityDescription(item))}</td></tr>`).join(""))}<div class="note">The activity log records new actions from the time this feature is deployed. It does not recreate actions performed earlier.</div></section>`
   );
 }
 function staff() {
@@ -1535,6 +1568,17 @@ function wire() {
         }),
     );
   }
+  if (view === "activity") {
+    $("#refresh-activity").onclick = async () => {
+      try {
+        await loadSchoolActivity();
+        render();
+        toast("Activity log refreshed.");
+      } catch (err) {
+        toast(err.message);
+      }
+    };
+  }
 }
 function download(type) {
   let rows;
@@ -1800,7 +1844,10 @@ async function showPortal(session) {
       await loadSchoolAttendance();
       await loadSchoolResults();
     }
-    if (role === "Administrator") await loadSchoolStaff();
+    if (role === "Administrator") {
+      await loadSchoolStaff();
+      await loadSchoolActivity();
+    }
   }
   $("#workspace-status").textContent = activeSchool ? "PILOT" : "DEMO";
   $("#workspace-message").textContent = activeSchool
