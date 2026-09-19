@@ -49,6 +49,7 @@ let view = "dashboard",
   communicationClass = "",
   communicationTemplate = "announcement",
   communicationMessage = "",
+  timetableClass = state.settings.classes[0],
   operation = crypto.randomUUID(),
   role = "Administrator",
   editingStudentId = null,
@@ -63,6 +64,7 @@ let view = "dashboard",
   schoolStaff = [],
   schoolActivity = [];
 let resultTerms = [state.settings.term];
+let timetableEntries = [];
 let attendanceDraft = null;
 function localDate() {
   const d = new Date();
@@ -124,6 +126,7 @@ const navItems = [
   ["attendance", "✓", "Attendance"],
   ["fees", "◈", "Fees & payments"],
   ["results", "▤", "Results"],
+  ["timetable", "▦", "Timetable"],
   ["communications", "✉", "Parent messages"],
   ["reports", "↗", "Reports"],
   ["staff", "♧", "Staff"],
@@ -142,6 +145,7 @@ const visibleNav = () =>
               "students",
               "attendance",
               "results",
+              "timetable",
               "communications",
             ].includes(id),
           )
@@ -245,6 +249,7 @@ function render() {
     attendance,
     fees,
     results,
+    timetable,
     reports,
     communications,
     staff,
@@ -324,6 +329,8 @@ async function loadSchoolStudents() {
   if (!schoolClasses().includes(promotionTo) || promotionTo === promotionFrom)
     promotionTo =
       schoolClasses().find((name) => name !== promotionFrom) || promotionFrom;
+  if (!schoolClasses().includes(timetableClass))
+    timetableClass = schoolClasses()[0];
   schoolDataLive = true;
 }
 async function loadSchoolFinance() {
@@ -428,6 +435,14 @@ async function loadResultTerms() {
   resultTerms = (await schoolApi("/api/school/result-terms")).terms;
   if (!resultTerms.includes(selectedResultTerm))
     selectedResultTerm = state.settings.term;
+}
+async function loadTimetable(className = timetableClass) {
+  if (!schoolDataLive || !className) return;
+  timetableEntries = (
+    await schoolApi(
+      `/api/school/timetable?class=${encodeURIComponent(className)}`,
+    )
+  ).entries;
 }
 function dashboard() {
   const charges = state.charges.reduce((s, c) => s + c.amount, 0),
@@ -922,6 +937,43 @@ function openAttendanceWhatsApp(studentId, status) {
     "noopener,noreferrer",
   );
 }
+const timetableDays = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
+function timetable() {
+  const displayedTimetableEntries = schoolDataLive
+      ? timetableEntries
+      : timetableEntries.filter((entry) => entry.class_name === timetableClass),
+    rows = displayedTimetableEntries.map(
+      (entry) =>
+        `<tr><td>${esc(timetableDays[Number(entry.weekday) - 1])}</td><td>${esc(entry.start_time)}–${esc(entry.end_time)}</td><td>${esc(entry.subject_name)}</td><td>${esc(entry.teacher_name)}</td><td>${role === "Administrator" ? `<button class="text-button remove-timetable" data-id="${esc(entry.id)}">Remove</button>` : "—"}</td></tr>`,
+    );
+  return (
+    heading(
+      "Class timetable",
+      "Organise weekly lesson times by class, subject and teacher.",
+      '<button class="button secondary" id="print-timetable">Print timetable</button>',
+    ) +
+    `<div class="stack"><section class="panel" id="timetable-form-panel"><div class="panel-heading"><h2>Add a lesson</h2><span class="badge gray">Administrator only</span></div><form id="timetable-form"><div class="form-grid"><div class="field"><label for="timetable-class">Class</label><select id="timetable-class" name="className">${options(schoolClasses(), timetableClass)}</select></div><div class="field"><label for="timetable-subject">Subject</label><select id="timetable-subject" name="subjectName">${options(state.settings.subjects, state.settings.subjects[0])}</select></div><div class="field"><label for="timetable-day">Day</label><select id="timetable-day" name="weekday">${timetableDays.map((day, index) => `<option value="${index + 1}">${day}</option>`).join("")}</select></div><div class="field"><label for="timetable-teacher">Teacher name</label><input id="timetable-teacher" name="teacherName" maxlength="100" required placeholder="e.g. Mr Lamin Bojang"></div><div class="field"><label for="timetable-start">Start time</label><input id="timetable-start" name="startTime" type="time" required></div><div class="field"><label for="timetable-end">End time</label><input id="timetable-end" name="endTime" type="time" required></div></div><div class="form-actions"><button class="button" ${state.settings.subjects.length ? "" : "disabled"}>Add lesson</button><span class="status-text">${state.settings.subjects.length ? "Overlapping lessons for the same class are blocked." : "Add subjects under Settings before creating a timetable."}</span></div><div id="timetable-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>${esc(timetableClass)} weekly timetable</h2><small>${timetableEntries.length} lessons</small></div><div class="toolbar"><label for="timetable-view-class">View class</label><select id="timetable-view-class">${options(schoolClasses(), timetableClass)}</select></div>${table(["Day", "Time", "Subject", "Teacher", "Action"], rows.join(""))}</section></div>`
+  );
+}
+function printTimetable() {
+  const popup = window.open("", "_blank");
+  if (!popup) {
+    toast("Allow pop-ups to open the printable timetable.");
+    return;
+  }
+  popup.document.write(
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(timetableClass)} Timetable</title><style>@page{size:A4 landscape;margin:14mm}body{font:12px Arial;color:#203330;margin:0;padding:16px}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:20px}h1{margin:0 0 6px}table{width:100%;border-collapse:collapse}th,td{padding:9px;border:1px solid #dce6e1;text-align:left}th{background:#eaf4ef}button{margin:18px 0;padding:10px 15px;background:#146a56;color:white;border:0;border-radius:6px}@media print{button{display:none}body{padding:0}}</style></head><body><header><h1>${esc(state.settings.name)}</h1><div>${esc(timetableClass)} Weekly Timetable · ${esc(state.settings.term)}</div></header><table><thead><tr><th>Day</th><th>Time</th><th>Subject</th><th>Teacher</th></tr></thead><tbody>${timetableEntries.map((entry) => `<tr><td>${esc(timetableDays[Number(entry.weekday) - 1])}</td><td>${esc(entry.start_time)}–${esc(entry.end_time)}</td><td>${esc(entry.subject_name)}</td><td>${esc(entry.teacher_name)}</td></tr>`).join("") || '<tr><td colspan="4">No lessons scheduled.</td></tr>'}</tbody></table><button onclick="window.print()">Print or save as PDF</button></body></html>`,
+  );
+  popup.document.close();
+}
 function results() {
   const list = activeStudents().filter((s) => s.class === selectedClass),
     historical = selectedResultTerm !== state.settings.term,
@@ -1207,6 +1259,8 @@ function activityDescription(item) {
       "students.imported": `Imported ${details.count || 0} students`,
       "students.promoted": `Promoted ${details.count || 0} students from ${details.fromClass || "a class"} to ${details.toClass || "another class"}`,
       "backup.downloaded": `Downloaded a complete school data backup`,
+      "timetable.created": `Scheduled ${details.subjectName || "a lesson"} for ${details.className || "a class"}`,
+      "timetable.removed": `Removed a lesson from the timetable`,
       "payment.recorded": `Recorded payment ${details.receiptNumber || ""} for ${money(Number(details.amountBututs || 0))}`,
       "charge.created": `Added ${details.description || "fee"} charge of ${money(Number(details.amountBututs || 0))}`,
       "class_charge.created": `Charged ${details.students || 0} students in ${details.className || "a class"}`,
@@ -2059,6 +2113,100 @@ function wire() {
         }),
     );
   }
+  if (view === "timetable") {
+    $("#print-timetable").onclick = printTimetable;
+    $("#timetable-view-class").onchange = async (e) => {
+      timetableClass = e.target.value;
+      if (schoolDataLive)
+        try {
+          await loadTimetable(timetableClass);
+        } catch (err) {
+          toast(err.message);
+        }
+      render();
+    };
+    $("#timetable-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const form = new FormData(e.target),
+        data = {
+          className: form.get("className"),
+          subjectName: form.get("subjectName"),
+          weekday: Number(form.get("weekday")),
+          teacherName: form.get("teacherName").trim(),
+          startTime: form.get("startTime"),
+          endTime: form.get("endTime"),
+        };
+      if (
+        !data.teacherName ||
+        !data.startTime ||
+        data.endTime <= data.startTime
+      ) {
+        $("#timetable-error").textContent =
+          "Enter a teacher and a valid start and end time.";
+        return;
+      }
+      const button = e.target.querySelector("button");
+      button.disabled = true;
+      try {
+        if (schoolDataLive) {
+          await schoolApi("/api/school/timetable", {
+            method: "POST",
+            body: JSON.stringify(data),
+          });
+          timetableClass = data.className;
+          await loadTimetable(timetableClass);
+        } else {
+          const overlap = timetableEntries.some(
+            (entry) =>
+              entry.class_name === data.className &&
+              Number(entry.weekday) === data.weekday &&
+              entry.start_time < data.endTime &&
+              entry.end_time > data.startTime,
+          );
+          if (overlap)
+            throw Error("This class already has a lesson during that time.");
+          timetableEntries.push({
+            id: crypto.randomUUID(),
+            class_name: data.className,
+            subject_name: data.subjectName,
+            weekday: data.weekday,
+            teacher_name: data.teacherName,
+            start_time: data.startTime,
+            end_time: data.endTime,
+          });
+          timetableClass = data.className;
+        }
+        render();
+        toast("Lesson added to the timetable.");
+      } catch (err) {
+        $("#timetable-error").textContent = err.message;
+        button.disabled = false;
+      }
+    };
+    document.querySelectorAll(".remove-timetable").forEach(
+      (button) =>
+        (button.onclick = async () => {
+          if (!confirm("Remove this lesson from the timetable?")) return;
+          try {
+            if (schoolDataLive) {
+              await schoolApi(`/api/school/timetable/${button.dataset.id}`, {
+                method: "DELETE",
+              });
+              await loadTimetable(timetableClass);
+            } else
+              timetableEntries = timetableEntries.filter(
+                (entry) => entry.id !== button.dataset.id,
+              );
+            render();
+            toast("Lesson removed.");
+          } catch (err) {
+            toast(err.message);
+          }
+        }),
+    );
+    if (schoolDataLive && role !== "Administrator")
+      $("#timetable-form-panel").hidden = true;
+  }
   if (view === "reports") {
     if ($("#school-backup")) $("#school-backup").onclick = downloadSchoolBackup;
     document
@@ -2678,6 +2826,7 @@ async function showPortal(session) {
       await loadSchoolAttendance();
       await loadResultTerms();
       await loadSchoolResults();
+      await loadTimetable();
     }
     if (role === "Administrator") {
       await loadSchoolStaff();
