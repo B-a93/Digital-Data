@@ -13,7 +13,7 @@ import {
   requirePlatformOwner,
   verifyAuthenticatedUser,
 } from "./auth-server.mjs";
-import { sendSchoolInvitation } from "./mailer.mjs";
+import { sendSchoolInvitation, sendStaffInvitation } from "./mailer.mjs";
 const root = path.resolve(fileURLToPath(new URL("./public/", import.meta.url)));
 const neonAuthUrl =
   "https://ep-spring-poetry-b2x3am6k.neonauth.c-6.eu-central-1.aws.neon.tech/neondb/auth";
@@ -107,6 +107,17 @@ async function emailInvitation(record, invite) {
     to: record.administrator_email,
     name: record.administrator_name,
     school: record.name,
+    link: `${baseUrl()}/?invite=${encodeURIComponent(invite.token)}`,
+    expiresAt: invite.expiresAt,
+  });
+}
+async function emailStaffInvitation(record, invite) {
+  if (!baseUrl()) throw new Error("APP_BASE_URL is not configured");
+  await sendStaffInvitation({
+    to: record.email,
+    name: record.full_name,
+    school: record.school_name,
+    role: record.role,
     link: `${baseUrl()}/?invite=${encodeURIComponent(invite.token)}`,
     expiresAt: invite.expiresAt,
   });
@@ -254,6 +265,79 @@ const server = http.createServer(async (req, res) => {
           ).rows[0];
         });
         json(res, 201, { student });
+        return;
+      }
+      json(res, 405, { error: "Method not allowed" });
+      return;
+    }
+    if (pathname === "/api/school/staff") {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method === "GET") {
+        const result = await query(
+          `SELECT full_name,email,role,invitation_status,invited_at,accepted_at
+           FROM staff_invitations WHERE school_id=$1 ORDER BY full_name`,
+          [context.school_id],
+        );
+        json(res, 200, { staff: result.rows });
+        return;
+      }
+      if (req.method === "POST") {
+        const data = await readJsonBody(req),
+          fullName = String(data.fullName || "").trim(),
+          email = String(data.email || "")
+            .trim()
+            .toLowerCase(),
+          staffRole = String(data.role || "")
+            .trim()
+            .toLowerCase();
+        if (
+          !fullName ||
+          fullName.length > 100 ||
+          !/^\S+@\S+\.\S+$/.test(email) ||
+          !["teacher", "finance"].includes(staffRole)
+        ) {
+          json(res, 400, { error: "Enter valid staff details." });
+          return;
+        }
+        const invite = invitation();
+        const record = (
+          await query(
+            `INSERT INTO staff_invitations(school_id,full_name,email,role,invitation_status,invitation_token_hash,invitation_expires_at,invited_at)
+             VALUES($1,$2,$3,$4,'sent',$5,$6,now())
+             ON CONFLICT(school_id,email) DO UPDATE SET full_name=EXCLUDED.full_name,role=EXCLUDED.role,
+             invitation_status='sent',invitation_token_hash=EXCLUDED.invitation_token_hash,
+             invitation_expires_at=EXCLUDED.invitation_expires_at,invited_at=now()
+             WHERE staff_invitations.accepted_at IS NULL
+             RETURNING *, $7::text AS school_name`,
+            [
+              context.school_id,
+              fullName,
+              email,
+              staffRole,
+              invite.hash,
+              invite.expiresAt,
+              context.name,
+            ],
+          )
+        ).rows[0];
+        if (!record) {
+          json(res, 409, { error: "This staff account is already active." });
+          return;
+        }
+        try {
+          await emailStaffInvitation(record, invite);
+          json(res, 201, { status: "sent" });
+        } catch (error) {
+          console.error("[email] staff invitation failed:", error.message);
+          await query(
+            `UPDATE staff_invitations SET invitation_status='email_failed' WHERE id=$1`,
+            [record.id],
+          );
+          json(res, 502, {
+            error: "The staff invitation email could not be sent.",
+          });
+        }
         return;
       }
       json(res, 405, { error: "Method not allowed" });
@@ -882,10 +966,17 @@ const server = http.createServer(async (req, res) => {
     if (inviteRoute) {
       const hash = tokenHash(inviteRoute[1]);
       if (req.method === "GET") {
-        const result = await query(
+        let result = await query(
           `SELECT s.name,o.administrator_name,o.administrator_email,o.invitation_expires_at FROM school_onboarding o JOIN schools s ON s.id=o.school_id WHERE o.invitation_token_hash=$1 AND o.accepted_at IS NULL AND o.invitation_expires_at>now()`,
           [hash],
         );
+        if (!result.rows[0])
+          result = await query(
+            `SELECT s.name,si.full_name AS administrator_name,si.email AS administrator_email,si.role,si.invitation_expires_at
+             FROM staff_invitations si JOIN schools s ON s.id=si.school_id
+             WHERE si.invitation_token_hash=$1 AND si.accepted_at IS NULL AND si.invitation_expires_at>now()`,
+            [hash],
+          );
         if (!result.rows[0]) {
           json(res, 404, {
             error: "This invitation is invalid or has expired.",
@@ -898,12 +989,23 @@ const server = http.createServer(async (req, res) => {
       if (req.method === "POST") {
         const user = await verifyAuthenticatedUser(req);
         const result = await transaction(async (client) => {
-          const found = (
+          let found = (
             await client.query(
               `SELECT o.school_id,o.administrator_email FROM school_onboarding o WHERE o.invitation_token_hash=$1 AND o.accepted_at IS NULL AND o.invitation_expires_at>now() FOR UPDATE`,
               [hash],
             )
           ).rows[0];
+          let staffInvite = false;
+          if (!found) {
+            found = (
+              await client.query(
+                `SELECT school_id,email AS administrator_email,role,id FROM staff_invitations
+                 WHERE invitation_token_hash=$1 AND accepted_at IS NULL AND invitation_expires_at>now() FOR UPDATE`,
+                [hash],
+              )
+            ).rows[0];
+            staffInvite = Boolean(found);
+          }
           if (!found)
             throw Object.assign(
               new Error("This invitation is invalid or has expired."),
@@ -917,17 +1019,29 @@ const server = http.createServer(async (req, res) => {
               { status: 403 },
             );
           await client.query(
-            `INSERT INTO school_users(school_id,auth_user_id,role) VALUES($1,$2,'administrator') ON CONFLICT(school_id,auth_user_id) DO UPDATE SET role='administrator'`,
-            [found.school_id, user.id],
+            `INSERT INTO school_users(school_id,auth_user_id,role) VALUES($1,$2,$3)
+             ON CONFLICT(school_id,auth_user_id) DO UPDATE SET role=EXCLUDED.role`,
+            [
+              found.school_id,
+              user.id,
+              staffInvite ? found.role : "administrator",
+            ],
           );
-          await client.query(
-            `UPDATE school_onboarding SET invitation_status='accepted',accepted_at=now(),auth_user_id=$2,invitation_token_hash=NULL WHERE school_id=$1`,
-            [found.school_id, user.id],
-          );
-          await client.query(
-            `UPDATE schools SET status='active',updated_at=now() WHERE id=$1`,
-            [found.school_id],
-          );
+          if (staffInvite)
+            await client.query(
+              `UPDATE staff_invitations SET invitation_status='accepted',accepted_at=now(),auth_user_id=$2,invitation_token_hash=NULL WHERE id=$1`,
+              [found.id, user.id],
+            );
+          else {
+            await client.query(
+              `UPDATE school_onboarding SET invitation_status='accepted',accepted_at=now(),auth_user_id=$2,invitation_token_hash=NULL WHERE school_id=$1`,
+              [found.school_id, user.id],
+            );
+            await client.query(
+              `UPDATE schools SET status='active',updated_at=now() WHERE id=$1`,
+              [found.school_id],
+            );
+          }
           return found;
         });
         json(res, 200, { status: "accepted", schoolId: result.school_id });
