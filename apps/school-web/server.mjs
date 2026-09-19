@@ -166,7 +166,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const membership = await query(
-        `SELECT su.role,s.id,s.name,s.slug,s.current_term,s.status
+        `SELECT su.role,s.id,s.name,s.slug,s.current_term,s.pass_mark,s.status
          FROM school_users su JOIN schools s ON s.id=su.school_id
          WHERE su.auth_user_id=$1 AND s.status='active'
          ORDER BY su.created_at LIMIT 1`,
@@ -186,6 +186,7 @@ const server = http.createServer(async (req, res) => {
           name: row.name,
           slug: row.slug,
           term: row.current_term,
+          passMark: Number(row.pass_mark),
           status: row.status,
         },
       });
@@ -248,6 +249,126 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       json(res, 405, { error: "Method not allowed" });
+      return;
+    }
+    if (pathname === "/api/school/settings") {
+      const context = await requireSchoolContext(req);
+      if (req.method !== "PATCH") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const data = await readJsonBody(req),
+        name = String(data.name || "").trim(),
+        term = String(data.term || "").trim(),
+        passMark = Number(data.passMark);
+      if (
+        !name ||
+        name.length > 100 ||
+        !term ||
+        term.length > 60 ||
+        !Number.isFinite(passMark) ||
+        passMark < 0 ||
+        passMark > 100
+      ) {
+        json(res, 400, { error: "Enter valid school settings." });
+        return;
+      }
+      const settings = (
+        await query(
+          `UPDATE schools SET name=$2,current_term=$3,pass_mark=$4,updated_at=now()
+           WHERE id=$1 RETURNING id,name,current_term,pass_mark`,
+          [context.school_id, name, term, passMark],
+        )
+      ).rows[0];
+      json(res, 200, { settings });
+      return;
+    }
+    if (pathname === "/api/school/classes") {
+      const context = await requireSchoolContext(req);
+      if (req.method !== "POST") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const name = String((await readJsonBody(req)).name || "").trim();
+      if (!name || name.length > 60) {
+        json(res, 400, { error: "Enter a valid class name." });
+        return;
+      }
+      const schoolClass = (
+        await query(
+          `INSERT INTO classes(school_id,name) VALUES($1,$2)
+           RETURNING id,name`,
+          [context.school_id, name],
+        )
+      ).rows[0];
+      json(res, 201, { class: schoolClass });
+      return;
+    }
+    const classRoute = pathname.match(
+      /^\/api\/school\/classes\/([0-9a-f-]{36})$/,
+    );
+    if (classRoute) {
+      const context = await requireSchoolContext(req);
+      if (req.method !== "DELETE") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const result = await query(
+        `DELETE FROM classes c WHERE c.id=$1 AND c.school_id=$2
+         AND NOT EXISTS(SELECT 1 FROM students st WHERE st.class_id=c.id)
+         RETURNING c.id`,
+        [classRoute[1], context.school_id],
+      );
+      if (!result.rows[0]) {
+        json(res, 409, {
+          error: "Move all students before removing this class.",
+        });
+        return;
+      }
+      json(res, 200, { status: "deleted" });
+      return;
+    }
+    if (pathname === "/api/school/fee-types") {
+      const context = await requireSchoolContext(req);
+      if (req.method !== "POST") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const name = String((await readJsonBody(req)).name || "").trim();
+      if (!name || name.length > 60) {
+        json(res, 400, { error: "Enter a valid fee type." });
+        return;
+      }
+      const feeType = (
+        await query(
+          `INSERT INTO fee_types(school_id,name) VALUES($1,$2)
+           RETURNING id,name`,
+          [context.school_id, name],
+        )
+      ).rows[0];
+      json(res, 201, { feeType });
+      return;
+    }
+    const feeTypeRoute = pathname.match(
+      /^\/api\/school\/fee-types\/([0-9a-f-]{36})$/,
+    );
+    if (feeTypeRoute) {
+      const context = await requireSchoolContext(req);
+      if (req.method !== "DELETE") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const result = await query(
+        `DELETE FROM fee_types ft WHERE ft.id=$1 AND ft.school_id=$2
+         AND NOT EXISTS(SELECT 1 FROM fee_charges fc WHERE fc.fee_type_id=ft.id)
+         RETURNING ft.id`,
+        [feeTypeRoute[1], context.school_id],
+      );
+      if (!result.rows[0]) {
+        json(res, 409, { error: "This fee type is already used by a charge." });
+        return;
+      }
+      json(res, 200, { status: "deleted" });
       return;
     }
     const studentRoute = pathname.match(
