@@ -3,7 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#146a56" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="School Portal" />
     <title>School Management Portal · Digital-Data</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/app-icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/app-icon.svg" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
@@ -199,6 +206,9 @@
             <div id="term"></div>
           </div>
           <div class="header-actions">
+            <button id="install-app" class="button secondary" hidden>
+              Install app
+            </button>
             <span id="role" class="badge gray">Administrator</span
             ><span id="signed-in-user" class="signed-in-user"></span
             ><button id="sign-out" class="text-button">Sign out</button>
