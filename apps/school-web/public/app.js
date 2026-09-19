@@ -38,6 +38,7 @@ let view = "dashboard",
   selectedDate = localDate(),
   search = "",
   studentClass = "",
+  studentStatus = "active",
   operation = crypto.randomUUID(),
   role = "Administrator",
   editingStudentId = null,
@@ -68,6 +69,8 @@ const money = (n) =>
     maximumFractionDigits: 2,
   });
 const schoolClasses = () => state.settings.classes;
+const activeStudents = () =>
+  state.students.filter((student) => (student.status || "active") === "active");
 const options = (items, current) =>
   items
     .map(
@@ -219,6 +222,7 @@ async function loadSchoolStudents() {
     admission: student.student_number,
     name: student.full_name,
     class: student.class_name || "Unassigned",
+    status: student.status || "active",
   }));
   state.attendance = {};
   state.marks = {};
@@ -387,6 +391,7 @@ function students() {
   const list = state.students.filter(
       (s) =>
         (!studentClass || s.class === studentClass) &&
+        (!studentStatus || (s.status || "active") === studentStatus) &&
         `${s.name} ${s.admission}`.toLowerCase().includes(search.toLowerCase()),
     ),
     editing = state.students.find((s) => s.id === editingStudentId);
@@ -395,11 +400,11 @@ function students() {
       "Students",
       "Keep a clear register of enrolment and class assignments.",
     ) +
-    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>${editing ? "Edit student" : schoolDataLive ? "Register a student" : "Register a fictional student"}</h2><span class="badge gray">${schoolDataLive ? "Neon record" : "Demo record"}</span></div><form id="student-form"><div class="form-grid"><div class="field"><label for="student-number">Student number</label><input id="student-number" name="studentNumber" maxlength="30" required autocomplete="off" placeholder="e.g. STU-2026-001" value="${esc(editing?.admission || "")}"></div><div class="field"><label for="name">Student full name</label><input id="name" name="name" maxlength="80" required placeholder="e.g. Awa Example" value="${esc(editing?.name || "")}"></div><div class="field"><label for="new-class">Class</label><select id="new-class" name="class">${options(schoolClasses(), editing?.class || schoolClasses()[0])}</select></div></div><div class="form-actions"><button class="button">${editing ? "Save changes" : "Add student"}</button>${editing ? '<button type="button" class="button secondary" id="cancel-edit">Cancel</button>' : ""}<span class="status-text">Each student number must be unique within this school.</span></div><div class="error" id="form-error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Student register</h2><small>${list.length} students</small></div><div class="toolbar"><input id="search" type="search" aria-label="Search students" value="${esc(search)}" placeholder="Search name or student number"><select id="student-class" aria-label="Filter students by class"><option value="">All classes</option>${options(schoolClasses(), studentClass)}</select></div>${table(["Student", "Class", "Balance", "Action"], list.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td>${money(balance(state, s.id))}</td><td><button class="text-button edit-student" data-id="${s.id}">Edit</button></td></tr>`).join(""))}</section></div>`
+    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>${editing ? "Edit student" : schoolDataLive ? "Register a student" : "Register a fictional student"}</h2><span class="badge gray">${schoolDataLive ? "Neon record" : "Demo record"}</span></div><form id="student-form"><div class="form-grid"><div class="field"><label for="student-number">Student number</label><input id="student-number" name="studentNumber" maxlength="30" required autocomplete="off" placeholder="e.g. STU-2026-001" value="${esc(editing?.admission || "")}"></div><div class="field"><label for="name">Student full name</label><input id="name" name="name" maxlength="80" required placeholder="e.g. Awa Example" value="${esc(editing?.name || "")}"></div><div class="field"><label for="new-class">Class</label><select id="new-class" name="class">${options(schoolClasses(), editing?.class || schoolClasses()[0])}</select></div></div><div class="form-actions"><button class="button">${editing ? "Save changes" : "Add student"}</button>${editing ? '<button type="button" class="button secondary" id="cancel-edit">Cancel</button>' : ""}<span class="status-text">Each student number must be unique within this school.</span></div><div class="error" id="form-error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Student register</h2><small>${list.length} students</small></div><div class="toolbar"><input id="search" type="search" aria-label="Search students" value="${esc(search)}" placeholder="Search name or student number"><select id="student-class" aria-label="Filter students by class"><option value="">All classes</option>${options(schoolClasses(), studentClass)}</select><select id="student-status" aria-label="Filter students by status"><option value="">All statuses</option>${options(["active", "inactive", "graduated"], studentStatus)}</select></div>${table(["Student", "Class", "Status", "Balance", "Action"], list.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td><span class="badge ${(s.status || "active") === "active" ? "" : "gray"}">${esc(s.status || "active")}</span></td><td>${money(balance(state, s.id))}</td><td><button class="text-button edit-student" data-id="${s.id}">Edit</button> · <button class="text-button student-status-action" data-id="${s.id}" data-status="${(s.status || "active") === "active" ? "inactive" : "active"}">${(s.status || "active") === "active" ? "Deactivate" : "Reactivate"}</button>${(s.status || "active") === "active" ? ` · <button class="text-button student-status-action" data-id="${s.id}" data-status="graduated">Graduate</button>` : ""}</td></tr>`).join(""))}</section></div>`
   );
 }
 function attendance() {
-  const list = state.students.filter((s) => s.class === selectedClass),
+  const list = activeStudents().filter((s) => s.class === selectedClass),
     record = state.attendance[selectedDate] || { marks: {}, saved: null };
   const marks = attendanceDraft || record.marks;
   const count = list.filter(
@@ -436,7 +441,7 @@ function fees() {
   );
 }
 function results() {
-  const list = state.students.filter((s) => s.class === selectedClass),
+  const list = activeStudents().filter((s) => s.class === selectedClass),
     snap = state.published
       .filter(
         (p) => p.class === selectedClass && p.term === state.settings.term,
@@ -680,6 +685,43 @@ function wire() {
       studentClass = e.target.value;
       render();
     };
+    $("#student-status").onchange = (e) => {
+      studentStatus = e.target.value;
+      render();
+    };
+    document.querySelectorAll(".student-status-action").forEach(
+      (button) =>
+        (button.onclick = async () => {
+          const student = state.students.find(
+              (item) => item.id === button.dataset.id,
+            ),
+            nextStatus = button.dataset.status;
+          if (!student || !confirm(`Mark ${student.name} as ${nextStatus}?`))
+            return;
+          try {
+            if (schoolDataLive)
+              await schoolApi(`/api/school/students/${student.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ status: nextStatus }),
+              });
+            else {
+              student.status = nextStatus;
+              save();
+            }
+            await (schoolDataLive ? loadSchoolStudents() : Promise.resolve());
+            render();
+            toast(`Student marked as ${nextStatus}.`);
+          } catch (err) {
+            toast(err.message);
+          }
+        }),
+    );
+    if (schoolDataLive && role !== "Administrator") {
+      $("#student-form").closest("section").hidden = true;
+      document
+        .querySelectorAll(".edit-student,.student-status-action")
+        .forEach((button) => (button.hidden = true));
+    }
   }
   if (view === "attendance") {
     const switchContext = async (name, value) => {
