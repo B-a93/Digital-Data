@@ -253,7 +253,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname === "/api/school/students") {
       const context = await requireSchoolContext(req);
       if (req.method === "GET") {
-        const [students, schoolClasses] = await Promise.all([
+        const [students, schoolClasses, subjects] = await Promise.all([
           query(
             `SELECT st.id,st.student_number,st.full_name,st.guardian_name,st.guardian_phone,st.status,c.name AS class_name
              FROM students st LEFT JOIN classes c ON c.id=st.class_id
@@ -264,10 +264,15 @@ const server = http.createServer(async (req, res) => {
             `SELECT id,name FROM classes WHERE school_id=$1 ORDER BY name`,
             [context.school_id],
           ),
+          query(
+            `SELECT id,name FROM subjects WHERE school_id=$1 ORDER BY name`,
+            [context.school_id],
+          ),
         ]);
         json(res, 200, {
           students: students.rows,
           classes: schoolClasses.rows,
+          subjects: subjects.rows,
         });
         return;
       }
@@ -603,6 +608,56 @@ const server = http.createServer(async (req, res) => {
         count: prepared.length,
       });
       json(res, 201, { imported: prepared.length });
+      return;
+    }
+    if (pathname === "/api/school/subjects") {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method !== "POST") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const name = String((await readJsonBody(req)).name || "").trim();
+      if (!name || name.length > 80) {
+        json(res, 400, { error: "Enter a valid subject name." });
+        return;
+      }
+      const subject = (
+        await query(
+          `INSERT INTO subjects(school_id,name) VALUES($1,$2) RETURNING id,name`,
+          [context.school_id, name],
+        )
+      ).rows[0];
+      await recordAudit(context, "subject.created", "subject", subject.id, {
+        name,
+      });
+      json(res, 201, { subject });
+      return;
+    }
+    const subjectRoute = pathname.match(
+      /^\/api\/school\/subjects\/([0-9a-f-]{36})$/,
+    );
+    if (subjectRoute) {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method !== "DELETE") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const subject = (
+        await query(
+          `DELETE FROM subjects WHERE id=$1 AND school_id=$2 RETURNING id,name`,
+          [subjectRoute[1], context.school_id],
+        )
+      ).rows[0];
+      if (!subject) {
+        json(res, 404, { error: "Subject not found." });
+        return;
+      }
+      await recordAudit(context, "subject.removed", "subject", subject.id, {
+        name: subject.name,
+      });
+      json(res, 200, { status: "deleted" });
       return;
     }
     if (pathname === "/api/school/settings") {
