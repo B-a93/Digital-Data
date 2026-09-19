@@ -275,7 +275,7 @@ const server = http.createServer(async (req, res) => {
       requireRole(context, "administrator");
       if (req.method === "GET") {
         const result = await query(
-          `SELECT full_name,email,role,invitation_status,invited_at,accepted_at
+          `SELECT id,full_name,email,role,invitation_status,invited_at,accepted_at
            FROM staff_invitations WHERE school_id=$1 ORDER BY full_name`,
           [context.school_id],
         );
@@ -338,6 +338,117 @@ const server = http.createServer(async (req, res) => {
             error: "The staff invitation email could not be sent.",
           });
         }
+        return;
+      }
+      json(res, 405, { error: "Method not allowed" });
+      return;
+    }
+    const staffResendRoute = pathname.match(
+      /^\/api\/school\/staff\/([0-9a-f-]{36})\/resend$/,
+    );
+    if (staffResendRoute) {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method !== "POST") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const invite = invitation();
+      const record = (
+        await query(
+          `UPDATE staff_invitations SET invitation_status='sent',invitation_token_hash=$3,
+           invitation_expires_at=$4,invited_at=now() WHERE id=$1 AND school_id=$2
+           AND accepted_at IS NULL RETURNING *, $5::text AS school_name`,
+          [
+            staffResendRoute[1],
+            context.school_id,
+            invite.hash,
+            invite.expiresAt,
+            context.name,
+          ],
+        )
+      ).rows[0];
+      if (!record) {
+        json(res, 404, { error: "Pending staff invitation not found." });
+        return;
+      }
+      try {
+        await emailStaffInvitation(record, invite);
+        json(res, 200, { status: "sent" });
+      } catch (error) {
+        console.error("[email] staff resend failed:", error.message);
+        await query(
+          `UPDATE staff_invitations SET invitation_status='email_failed' WHERE id=$1`,
+          [record.id],
+        );
+        json(res, 502, {
+          error: "The staff invitation email could not be sent.",
+        });
+      }
+      return;
+    }
+    const staffRoute = pathname.match(
+      /^\/api\/school\/staff\/([0-9a-f-]{36})$/,
+    );
+    if (staffRoute) {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method === "PATCH") {
+        const staffRole = String(
+          (await readJsonBody(req)).role || "",
+        ).toLowerCase();
+        if (!["teacher", "finance"].includes(staffRole)) {
+          json(res, 400, { error: "Choose Teacher or Finance." });
+          return;
+        }
+        const member = await transaction(async (client) => {
+          const updated = (
+            await client.query(
+              `UPDATE staff_invitations SET role=$3 WHERE id=$1 AND school_id=$2
+               RETURNING id,auth_user_id,role`,
+              [staffRoute[1], context.school_id, staffRole],
+            )
+          ).rows[0];
+          if (updated?.auth_user_id)
+            await client.query(
+              `UPDATE school_users SET role=$3 WHERE school_id=$1 AND auth_user_id=$2`,
+              [context.school_id, updated.auth_user_id, staffRole],
+            );
+          return updated;
+        });
+        if (!member) {
+          json(res, 404, { error: "Staff member not found." });
+          return;
+        }
+        json(res, 200, { staff: member });
+        return;
+      }
+      if (req.method === "DELETE") {
+        const member = await transaction(async (client) => {
+          const found = (
+            await client.query(
+              `SELECT id,auth_user_id FROM staff_invitations WHERE id=$1 AND school_id=$2 FOR UPDATE`,
+              [staffRoute[1], context.school_id],
+            )
+          ).rows[0];
+          if (!found) return null;
+          if (found.auth_user_id)
+            await client.query(
+              `DELETE FROM school_users WHERE school_id=$1 AND auth_user_id=$2`,
+              [context.school_id, found.auth_user_id],
+            );
+          await client.query(
+            `UPDATE staff_invitations SET invitation_status='revoked',invitation_token_hash=NULL,
+             invitation_expires_at=NULL,accepted_at=NULL,auth_user_id=NULL WHERE id=$1`,
+            [found.id],
+          );
+          return found;
+        });
+        if (!member) {
+          json(res, 404, { error: "Staff member not found." });
+          return;
+        }
+        json(res, 200, { status: "revoked" });
         return;
       }
       json(res, 405, { error: "Method not allowed" });
