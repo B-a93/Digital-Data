@@ -815,6 +815,64 @@ const server = http.createServer(async (req, res) => {
       json(res, 201, { charge });
       return;
     }
+    if (pathname === "/api/school/class-charges") {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator", "finance");
+      if (req.method !== "POST") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const data = await readJsonBody(req),
+        className = String(data.className || "").trim(),
+        description = String(data.description || "").trim(),
+        amount = Number(data.amountBututs);
+      if (
+        !className ||
+        !description ||
+        !Number.isSafeInteger(amount) ||
+        amount <= 0
+      ) {
+        json(res, 400, { error: "Choose a class, fee type and valid amount." });
+        return;
+      }
+      const result = await transaction(async (client) => {
+        const schoolClass = (
+          await client.query(
+            `SELECT id FROM classes WHERE school_id=$1 AND name=$2`,
+            [context.school_id, className],
+          )
+        ).rows[0];
+        if (!schoolClass)
+          throw Object.assign(new Error("Class not found."), { status: 404 });
+        const students = (
+          await client.query(
+            `SELECT id FROM students WHERE school_id=$1 AND class_id=$2 AND status='active'`,
+            [context.school_id, schoolClass.id],
+          )
+        ).rows;
+        if (!students.length)
+          throw Object.assign(
+            new Error("This class has no active students to charge."),
+            { status: 409 },
+          );
+        const feeType = (
+          await client.query(
+            `INSERT INTO fee_types(school_id,name) VALUES($1,$2)
+             ON CONFLICT(school_id,name) DO UPDATE SET name=EXCLUDED.name RETURNING id`,
+            [context.school_id, description],
+          )
+        ).rows[0];
+        for (const student of students)
+          await client.query(
+            `INSERT INTO fee_charges(school_id,student_id,fee_type_id,description,amount_bututs)
+             VALUES($1,$2,$3,$4,$5)`,
+            [context.school_id, student.id, feeType.id, description, amount],
+          );
+        return students.length;
+      });
+      json(res, 201, { charged: result });
+      return;
+    }
     if (pathname === "/api/school/payments") {
       const context = await requireSchoolContext(req);
       requireRole(context, "administrator", "finance");
