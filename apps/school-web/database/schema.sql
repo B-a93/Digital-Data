@@ -162,6 +162,7 @@ CREATE TABLE IF NOT EXISTS assessment_marks (
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (assessment_id, student_id)
 );
+ALTER TABLE assessment_marks ADD COLUMN IF NOT EXISTS remark text;
 ALTER TABLE assessments ADD COLUMN IF NOT EXISTS subject_id uuid REFERENCES subjects(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS students_school_class_idx ON students(school_id, class_id);
