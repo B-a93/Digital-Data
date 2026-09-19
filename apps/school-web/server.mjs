@@ -145,6 +145,31 @@ function requireRole(context, ...allowed) {
     { status: 403 },
   );
 }
+async function recordAudit(
+  context,
+  action,
+  entityType,
+  entityId = null,
+  details = {},
+) {
+  try {
+    await query(
+      `INSERT INTO audit_logs(school_id,actor_user_id,actor_email,action,entity_type,entity_id,details)
+       VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+      [
+        context.school_id,
+        context.id,
+        context.email,
+        action,
+        entityType,
+        entityId,
+        JSON.stringify(details),
+      ],
+    );
+  } catch (error) {
+    console.error("[audit] write failed:", error.message);
+  }
+}
 const server = http.createServer(async (req, res) => {
   try {
     const requestUrl = new URL(req.url, "http://localhost");
@@ -210,6 +235,21 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
+    if (pathname === "/api/school/activity") {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method !== "GET") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const result = await query(
+        `SELECT id,actor_email,action,entity_type,entity_id,details,created_at
+         FROM audit_logs WHERE school_id=$1 ORDER BY created_at DESC LIMIT 200`,
+        [context.school_id],
+      );
+      json(res, 200, { activity: result.rows });
+      return;
+    }
     if (pathname === "/api/school/students") {
       const context = await requireSchoolContext(req);
       if (req.method === "GET") {
@@ -263,6 +303,11 @@ const server = http.createServer(async (req, res) => {
               [context.school_id, schoolClass.id, studentNumber, fullName],
             )
           ).rows[0];
+        });
+        await recordAudit(context, "student.created", "student", student.id, {
+          studentNumber,
+          fullName,
+          className,
         });
         json(res, 201, { student });
         return;
@@ -535,6 +580,9 @@ const server = http.createServer(async (req, res) => {
           );
         }
       });
+      await recordAudit(context, "students.imported", "student", null, {
+        count: prepared.length,
+      });
       json(res, 201, { imported: prepared.length });
       return;
     }
@@ -568,6 +616,17 @@ const server = http.createServer(async (req, res) => {
           [context.school_id, name, term, passMark],
         )
       ).rows[0];
+      await recordAudit(
+        context,
+        "settings.updated",
+        "school",
+        context.school_id,
+        {
+          name,
+          term,
+          passMark,
+        },
+      );
       json(res, 200, { settings });
       return;
     }
@@ -691,6 +750,15 @@ const server = http.createServer(async (req, res) => {
           json(res, 404, { error: "Student not found." });
           return;
         }
+        await recordAudit(
+          context,
+          "student.status_changed",
+          "student",
+          student.id,
+          {
+            status,
+          },
+        );
         json(res, 200, { student });
         return;
       }
@@ -734,6 +802,11 @@ const server = http.createServer(async (req, res) => {
         json(res, 404, { error: "Student not found." });
         return;
       }
+      await recordAudit(context, "student.updated", "student", updated.id, {
+        studentNumber,
+        fullName,
+        className,
+      });
       json(res, 200, { student: updated });
       return;
     }
@@ -812,6 +885,11 @@ const server = http.createServer(async (req, res) => {
           )
         ).rows[0];
       });
+      await recordAudit(context, "charge.created", "charge", charge.id, {
+        studentId,
+        description,
+        amountBututs: amount,
+      });
       json(res, 201, { charge });
       return;
     }
@@ -870,6 +948,12 @@ const server = http.createServer(async (req, res) => {
           );
         return students.length;
       });
+      await recordAudit(context, "class_charge.created", "charge", null, {
+        className,
+        description,
+        amountBututs: amount,
+        students: result,
+      });
       json(res, 201, { charged: result });
       return;
     }
@@ -920,6 +1004,11 @@ const server = http.createServer(async (req, res) => {
           ],
         )
       ).rows[0];
+      await recordAudit(context, "payment.recorded", "payment", payment.id, {
+        studentId,
+        amountBututs: amount,
+        receiptNumber: payment.receipt_number,
+      });
       json(res, 201, { payment });
       return;
     }
@@ -1004,6 +1093,11 @@ const server = http.createServer(async (req, res) => {
               [context.school_id, studentId, date, status, context.id],
             );
           return new Date().toISOString();
+        });
+        await recordAudit(context, "attendance.saved", "attendance", null, {
+          className: selectedClass,
+          date,
+          marked: Object.keys(marks).length,
         });
         json(res, 200, { status: "saved", saved });
         return;
@@ -1111,6 +1205,17 @@ const server = http.createServer(async (req, res) => {
           ).rows[0].count;
           return { ...assessment, version };
         });
+        await recordAudit(
+          context,
+          "results.published",
+          "assessment",
+          result.id,
+          {
+            className,
+            term,
+            version: result.version,
+          },
+        );
         json(res, 201, { assessment: result });
         return;
       }
