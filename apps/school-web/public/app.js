@@ -905,6 +905,23 @@ function openGuardianWhatsApp(studentId) {
     "noopener,noreferrer",
   );
 }
+function openAttendanceWhatsApp(studentId, status) {
+  const student = state.students.find((item) => item.id === studentId),
+    phone = whatsappPhone(student?.guardianPhone);
+  if (!student || !phone) {
+    toast("Add a valid guardian phone number first.");
+    return;
+  }
+  if (!["absent", "late"].includes(status)) return;
+  const guardian = student.guardianName || "Parent/Guardian",
+    description = status === "absent" ? "was marked absent" : "was marked late",
+    message = `Hello ${guardian}, this is an attendance follow-up from ${state.settings.name}. ${student.name} (${student.admission}) ${description} on ${selectedDate}. Please contact the school if you need any clarification. Thank you.`;
+  window.open(
+    `https://wa.me/${phone}?text=${encodeURIComponent(message)}`,
+    "_blank",
+    "noopener,noreferrer",
+  );
+}
 function results() {
   const list = activeStudents().filter((s) => s.class === selectedClass),
     historical = selectedResultTerm !== state.settings.term,
@@ -1600,6 +1617,34 @@ function wire() {
   if (view === "attendance") {
     $("#print-attendance").onclick = printAttendanceReport;
     $("#attendance-csv").onclick = downloadAttendanceCsv;
+    const attendanceTable = $("#content table");
+    attendanceTable
+      .querySelector("thead tr")
+      .insertAdjacentHTML(
+        "beforeend",
+        "<th>Guardian contact</th><th>Follow-up</th>",
+      );
+    document.querySelectorAll(".attendance-select").forEach((select) => {
+      const student = state.students.find(
+          (item) => item.id === select.dataset.student,
+        ),
+        saved = !attendanceDraft && state.attendance[selectedDate]?.saved,
+        needsFollowUp = ["absent", "late"].includes(select.value),
+        validPhone = whatsappPhone(student?.guardianPhone);
+      select
+        .closest("tr")
+        .insertAdjacentHTML(
+          "beforeend",
+          `<td>${esc(student?.guardianName || "Not recorded")}<span class="sub">${esc(student?.guardianPhone || "No phone number")}</span></td><td class="attendance-followup">${needsFollowUp && saved && validPhone ? `<button class="text-button attendance-whatsapp" data-id="${esc(student.id)}" data-status="${esc(select.value)}">WhatsApp guardian</button>` : needsFollowUp && !saved ? '<span class="status-text">Save attendance first</span>' : needsFollowUp ? '<span class="status-text">Add phone number</span>' : "—"}</td>`,
+        );
+    });
+    document
+      .querySelectorAll(".attendance-whatsapp")
+      .forEach(
+        (button) =>
+          (button.onclick = () =>
+            openAttendanceWhatsApp(button.dataset.id, button.dataset.status)),
+      );
     const switchContext = async (name, value) => {
       if (attendanceDraft && !confirm("Discard unsaved attendance changes?")) {
         render();
@@ -1631,6 +1676,12 @@ function wire() {
           if (s.value === "unmarked") delete attendanceDraft[s.dataset.student];
           else attendanceDraft[s.dataset.student] = s.value;
           $("#attendance-status").textContent = "Unsaved changes";
+          s.closest("tr").querySelector(".attendance-followup").innerHTML = [
+            "absent",
+            "late",
+          ].includes(s.value)
+            ? '<span class="status-text">Save attendance first</span>'
+            : "—";
         }),
     );
     $("#present-all").onclick = () => {
