@@ -1222,7 +1222,7 @@ const server = http.createServer(async (req, res) => {
           return;
         }
         const marks = await query(
-          `SELECT st.id AS student_id,st.student_number,st.full_name,am.score
+          `SELECT st.id AS student_id,st.student_number,st.full_name,am.score,COALESCE(am.remark,'') AS remark
            FROM assessment_marks am JOIN students st ON st.id=am.student_id
            WHERE am.assessment_id=$1 ORDER BY st.full_name`,
           [assessment.id],
@@ -1270,7 +1270,8 @@ const server = http.createServer(async (req, res) => {
                 !expectedIds.has(String(mark.studentId)) ||
                 !Number.isFinite(Number(mark.score)) ||
                 Number(mark.score) < 0 ||
-                Number(mark.score) > 100,
+                Number(mark.score) > 100 ||
+                String(mark.remark || "").length > 160,
             )
           )
             throw Object.assign(
@@ -1294,9 +1295,14 @@ const server = http.createServer(async (req, res) => {
           ).rows[0];
           for (const mark of marks)
             await client.query(
-              `INSERT INTO assessment_marks(assessment_id,student_id,score)
-               VALUES($1,$2,$3)`,
-              [assessment.id, mark.studentId, Number(mark.score)],
+              `INSERT INTO assessment_marks(assessment_id,student_id,score,remark)
+               VALUES($1,$2,$3,$4)`,
+              [
+                assessment.id,
+                mark.studentId,
+                Number(mark.score),
+                String(mark.remark || "").trim() || null,
+              ],
             );
           const version = (
             await client.query(
@@ -1358,7 +1364,7 @@ const server = http.createServer(async (req, res) => {
                AND a.published_at IS NOT NULL
              ORDER BY COALESCE(su.name,'General'),a.published_at DESC
            )
-           SELECT am.student_id,l.subject_name,am.score,l.maximum_score
+           SELECT am.student_id,l.subject_name,am.score,l.maximum_score,COALESCE(am.remark,'') AS remark
            FROM latest l JOIN assessment_marks am ON am.assessment_id=l.id
            ORDER BY l.subject_name`,
           [context.school_id, className, term],
