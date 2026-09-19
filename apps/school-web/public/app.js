@@ -466,18 +466,36 @@ function fees() {
         : "Review charges, record demo receipts and see outstanding balances.",
     ) +
     `<div class="grid"><section class="panel"><div class="panel-heading"><h2>Record ${schoolDataLive ? "a" : "a demo"} payment</h2></div><form id="payment-form"><div class="field"><label for="pay-student">Student</label><select id="pay-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)} · ${esc(s.admission)}</option>`).join("")}</select></div><div class="field"><label for="amount">Amount in dalasi</label><input id="amount" name="amount" type="text" inputmode="decimal" required placeholder="1500.00"></div><div class="note">Overpayment becomes a displayed credit, not an automatic refund.</div><div class="form-actions"><button class="button">Record payment</button></div><div id="form-error" class="error" role="alert"></div><div id="receipt" role="status"></div></form></section><section class="panel"><div class="panel-heading"><h2>Add ${schoolDataLive ? "a" : "a demo"} charge</h2></div><form id="charge-form"><div class="field"><label for="charge-student">Student</label><select id="charge-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div><div class="field"><label for="charge-label">Fee type</label><select id="charge-label" name="label">${options(state.settings.feeTypes, state.settings.feeTypes[0])}</select></div><div class="field"><label for="charge-amount">Amount in dalasi</label><input id="charge-amount" name="amount" inputmode="decimal" required placeholder="1500.00"></div><div class="form-actions"><button class="button secondary">Add charge</button></div><div id="charge-error" class="error" role="alert"></div></form></section><section class="panel wide"><div class="panel-heading"><h2>Student balances</h2><small>Negative balance = credit</small></div>${table(["Student", "Class", "Balance", "Status"], state.students.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td>${money(balance(state, s.id))}</td><td>${badge(balance(state, s.id))}</td></tr>`).join(""))}</section><section class="panel wide"><div class="panel-heading"><h2>Recent ${schoolDataLive ? "" : "demo "}receipts</h2></div>${table(
-      ["Receipt", "Student", "Date", "Amount"],
+      ["Receipt", "Student", "Date", "Amount", "Action"],
       state.payments
         .slice()
         .reverse()
         .slice(0, 10)
         .map(
           (p) =>
-            `<tr><td>${esc(p.reference)}</td><td>${esc(state.students.find((s) => s.id === p.studentId)?.name)}</td><td>${esc(p.date)}</td><td>${money(p.amount)}</td></tr>`,
+            `<tr><td>${esc(p.reference)}</td><td>${esc(state.students.find((s) => s.id === p.studentId)?.name)}</td><td>${esc(p.date)}</td><td>${money(p.amount)}</td><td><button class="text-button print-receipt" data-id="${esc(p.id)}">Print receipt</button></td></tr>`,
         )
         .join(""),
     )}</section><section class="panel wide"><div class="panel-heading"><div><h2>Payment Status Report</h2><p>Print students with outstanding payments separately from students who are fully paid.</p></div><span class="badge gray">${esc(state.settings.term)}</span></div><div class="quick-actions"><button class="button" id="outstanding-print">Print outstanding students</button><button class="button secondary" id="paid-print">Print fully-paid students</button><button class="button secondary" id="payment-print">Print complete report</button><button class="button secondary" id="payment-excel">Download Excel</button></div><div class="note">Each report includes student name, student number, class, charges, amount paid and balance.</div></section></div>`
   );
+}
+function printReceipt(paymentId) {
+  const payment = state.payments.find((item) => item.id === paymentId),
+    student =
+      payment && state.students.find((item) => item.id === payment.studentId);
+  if (!payment || !student) {
+    toast("Receipt record could not be found.");
+    return;
+  }
+  const popup = window.open("", "_blank");
+  if (!popup) {
+    toast("Allow pop-ups to open the printable receipt.");
+    return;
+  }
+  popup.document.write(
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(payment.reference)}</title><style>@page{size:A5 portrait;margin:14mm}body{font:14px Arial;color:#203330;margin:0;padding:24px}.receipt{max-width:620px;margin:auto;border:1px solid #dce6e1;border-radius:12px;padding:30px}header{border-bottom:3px solid #146a56;padding-bottom:16px;margin-bottom:22px}h1{margin:0 0 6px;font-size:24px}.brand{color:#146a56;font-weight:bold}.row{display:flex;justify-content:space-between;gap:20px;padding:10px 0;border-bottom:1px solid #edf1ef}.amount{font-size:26px;font-weight:bold;color:#146a56}.foot{margin-top:24px;color:#60736d;font-size:11px;line-height:1.5}button{margin-top:20px;padding:10px 15px;background:#146a56;color:white;border:0;border-radius:6px}@media print{button{display:none}body{padding:0}.receipt{border:0}}</style></head><body><div class="receipt"><header><div class="brand">${esc(state.settings.name)}</div><h1>Payment receipt</h1><div>${esc(state.settings.term)}</div></header><div class="row"><span>Receipt number</span><strong>${esc(payment.reference)}</strong></div><div class="row"><span>Date</span><strong>${esc(payment.date)}</strong></div><div class="row"><span>Student</span><strong>${esc(student.name)}</strong></div><div class="row"><span>Student number</span><strong>${esc(student.admission)}</strong></div><div class="row"><span>Class</span><strong>${esc(student.class)}</strong></div><div class="row"><span>Amount received</span><strong class="amount">${money(payment.amount)}</strong></div><div class="row"><span>Current balance</span><strong>${money(balance(state, student.id))}</strong></div><p class="foot">Generated by the School Management Portal by Elegant Empire AI. Keep this receipt for the school’s and payer’s records.</p><button onclick="window.print()">Print or save as PDF</button></div></body></html>`,
+  );
+  popup.document.close();
 }
 function results() {
   const list = activeStudents().filter((s) => s.class === selectedClass),
@@ -913,6 +931,11 @@ function wire() {
     $("#paid-print").onclick = () => printPaymentReport("paid");
     $("#payment-print").onclick = () => printPaymentReport();
     $("#payment-excel").onclick = downloadPaymentReportExcel;
+    document
+      .querySelectorAll(".print-receipt")
+      .forEach(
+        (button) => (button.onclick = () => printReceipt(button.dataset.id)),
+      );
     $("#payment-form").onsubmit = async (e) => {
       e.preventDefault();
       try {
@@ -942,7 +965,9 @@ function wire() {
           await loadSchoolFinance();
           render();
           $("#receipt").innerHTML =
-            `<div class="note">Saved to Neon · Receipt <strong>${esc(result.payment.receipt_number)}</strong><br>${money(Number(result.payment.amount_bututs))} · ${esc(state.students.find((s) => s.id === studentId).name)}</div>`;
+            `<div class="note">Saved to Neon · Receipt <strong>${esc(result.payment.receipt_number)}</strong><br>${money(Number(result.payment.amount_bututs))} · ${esc(state.students.find((s) => s.id === studentId).name)}<br><button type="button" class="text-button" id="print-new-receipt">Print receipt</button></div>`;
+          $("#print-new-receipt").onclick = () =>
+            printReceipt(result.payment.id);
           return;
         }
         const receipt = recordPayment(state, {
@@ -955,7 +980,8 @@ function wire() {
         operation = crypto.randomUUID();
         render();
         $("#receipt").innerHTML =
-          `<div class="note">${persisted ? "Saved locally" : "In memory only"} · Receipt <strong>${esc(receipt.reference)}</strong><br>${money(receipt.amount)} · ${esc(state.students.find((s) => s.id === studentId).name)}</div>`;
+          `<div class="note">${persisted ? "Saved locally" : "In memory only"} · Receipt <strong>${esc(receipt.reference)}</strong><br>${money(receipt.amount)} · ${esc(state.students.find((s) => s.id === studentId).name)}<br><button type="button" class="text-button" id="print-new-receipt">Print receipt</button></div>`;
+        $("#print-new-receipt").onclick = () => printReceipt(receipt.id);
       } catch (err) {
         $("#form-error").textContent = err.message;
         e.target.querySelector(".button").disabled = false;
