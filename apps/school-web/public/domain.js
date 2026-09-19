@@ -152,6 +152,7 @@ export function publishResults(state, className, subjectName = "General") {
     name: s.name,
     admission: s.admission,
     score: state.marks[s.id],
+    remark: state.remarks?.[s.id] || "",
   }));
   if (
     !entries.length ||
