@@ -16,6 +16,7 @@ ALTER TABLE schools ADD COLUMN IF NOT EXISTS contact_name text;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS contact_email text;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS contact_phone text;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'pending';
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS grade_scale jsonb NOT NULL DEFAULT '{"A":80,"B":70,"C":60}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS school_onboarding (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
