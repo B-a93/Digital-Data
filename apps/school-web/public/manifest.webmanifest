@@ -1,0 +1,19 @@
+{
+  "name": "School Management Portal",
+  "short_name": "School Portal",
+  "description": "Secure school administration for students, attendance, fees, results and reports.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f7f6",
+  "theme_color": "#146a56",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
