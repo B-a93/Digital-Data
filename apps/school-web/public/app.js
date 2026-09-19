@@ -126,7 +126,7 @@ function table(heads, rows) {
   return `<div class="table-wrap"><table><thead><tr>${heads.map((h) => `<th scope="col">${h}</th>`).join("")}</tr></thead><tbody>${rows || `<tr><td colspan="${heads.length}" class="empty">No matching records.</td></tr>`}</tbody></table></div>`;
 }
 function studentCell(s) {
-  return `<span class="student-name">${esc(s.name)}</span><span class="sub">${esc(s.admission)}</span>`;
+  return `<span class="student-name">${esc(s.name)}</span><span class="sub">${esc(s.admission)}</span>${s.guardianName || s.guardianPhone ? `<span class="sub">Guardian: ${esc(s.guardianName || "—")}${s.guardianPhone ? ` · ${esc(s.guardianPhone)}` : ""}</span>` : ""}`;
 }
 function badge(n) {
   return n > 0
@@ -163,8 +163,20 @@ function parseCsvText(text) {
 }
 function downloadStudentTemplate() {
   const content = csv([
-      ["Student number", "Full name", "Class"],
-      ["STU-2026-001", "Example Student", "Grade 7 A"],
+      [
+        "Student number",
+        "Full name",
+        "Class",
+        "Guardian name",
+        "Guardian phone",
+      ],
+      [
+        "STU-2026-001",
+        "Example Student",
+        "Grade 7 A",
+        "Example Guardian",
+        "+220 000 0000",
+      ],
     ]),
     blob = new Blob(["\ufeff" + content], { type: "text/csv;charset=utf-8" }),
     url = URL.createObjectURL(blob),
@@ -264,6 +276,8 @@ async function loadSchoolStudents() {
     admission: student.student_number,
     name: student.full_name,
     class: student.class_name || "Unassigned",
+    guardianName: student.guardian_name || "",
+    guardianPhone: student.guardian_phone || "",
     status: student.status || "active",
   }));
   state.attendance = {};
@@ -796,6 +810,10 @@ function wire() {
     );
   }
   if (view === "students") {
+    $("#student-form .form-grid").insertAdjacentHTML(
+      "beforeend",
+      `<div class="field"><label for="guardian-name">Parent or guardian name</label><input id="guardian-name" name="guardianName" maxlength="100" value="${esc(state.students.find((student) => student.id === editingStudentId)?.guardianName || "")}" placeholder="Optional"></div><div class="field"><label for="guardian-phone">Parent or guardian phone</label><input id="guardian-phone" name="guardianPhone" type="tel" maxlength="40" value="${esc(state.students.find((student) => student.id === editingStudentId)?.guardianPhone || "")}" placeholder="Optional"></div>`,
+    );
     $("#student-form").onsubmit = async (e) => {
       e.preventDefault();
       const f = new FormData(e.target),
@@ -839,6 +857,8 @@ function wire() {
                 studentNumber,
                 fullName: name,
                 className: f.get("class"),
+                guardianName: f.get("guardianName"),
+                guardianPhone: f.get("guardianPhone"),
               }),
             },
           );
@@ -859,6 +879,8 @@ function wire() {
         editing.admission = studentNumber;
         editing.name = name;
         editing.class = f.get("class");
+        editing.guardianName = f.get("guardianName");
+        editing.guardianPhone = f.get("guardianPhone");
         editingStudentId = null;
       } else
         state.students.push({
@@ -866,6 +888,8 @@ function wire() {
           admission: studentNumber,
           name,
           class: f.get("class"),
+          guardianName: f.get("guardianName"),
+          guardianPhone: f.get("guardianPhone"),
         });
       save();
       render();
@@ -902,6 +926,8 @@ function wire() {
           studentNumber: row[0] || "",
           fullName: row[1] || "",
           className: row[2] || "",
+          guardianName: row[3] || "",
+          guardianPhone: row[4] || "",
         }));
         if (schoolDataLive) {
           const result = await schoolApi("/api/school/students/import", {
@@ -919,6 +945,8 @@ function wire() {
               admission: student.studentNumber.toUpperCase(),
               name: student.fullName,
               class: student.className,
+              guardianName: student.guardianName,
+              guardianPhone: student.guardianPhone,
               status: "active",
             });
           save();
