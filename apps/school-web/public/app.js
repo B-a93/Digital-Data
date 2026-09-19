@@ -34,6 +34,7 @@ state.settings.feeTypes ||= [
   ]),
 ];
 state.settings.subjects ||= [];
+state.remarks ||= {};
 let view = "dashboard",
   selectedClass = state.settings.classes[0],
   selectedSubject = state.settings.subjects?.[0] || "General",
@@ -75,6 +76,13 @@ const money = (n) =>
 const schoolClasses = () => state.settings.classes;
 const schoolSubjects = () =>
   state.settings.subjects.length ? state.settings.subjects : ["General"];
+const resultGrade = (score, passMark = state.settings.pass) => {
+  if (score >= 80) return "A";
+  if (score >= Math.max(70, passMark)) return "B";
+  if (score >= Math.max(60, passMark)) return "C";
+  if (score >= passMark) return "D";
+  return "F";
+};
 const activeStudents = () =>
   state.students.filter((student) => (student.status || "active") === "active");
 const options = (items, current) =>
@@ -291,6 +299,7 @@ async function loadSchoolStudents() {
   }));
   state.attendance = {};
   state.marks = {};
+  state.remarks = {};
   state.published = [];
   selectedClass = state.settings.classes[0];
   schoolDataLive = true;
@@ -354,6 +363,7 @@ async function loadSchoolResults(
       .map((student) => student.id),
   );
   for (const studentId of classStudentIds) delete state.marks[studentId];
+  for (const studentId of classStudentIds) delete state.remarks[studentId];
   state.published = state.published.filter(
     (item) =>
       !(
@@ -363,8 +373,10 @@ async function loadSchoolResults(
       ),
   );
   if (!data.assessment) return;
-  for (const mark of data.marks)
+  for (const mark of data.marks) {
     state.marks[mark.student_id] = Number(mark.score);
+    state.remarks[mark.student_id] = mark.remark || "";
+  }
   state.published.push({
     class: className,
     subject: data.assessment.subject_name || subjectName,
@@ -376,6 +388,7 @@ async function loadSchoolResults(
       admission: mark.student_number,
       name: mark.full_name,
       score: Number(mark.score),
+      remark: mark.remark || "",
     })),
   });
 }
@@ -669,7 +682,7 @@ function results() {
         : "Prepare a single demo assessment, then publish a versioned snapshot.",
       '<button class="button secondary" id="print-report-cards">Print class report cards</button>',
     ) +
-    `<section class="panel"><div class="toolbar"><label for="res-class">Class</label><select id="res-class">${options(schoolClasses(), selectedClass)}</select><label for="res-subject">Subject</label><select id="res-subject">${options(schoolSubjects(), selectedSubject)}</select><span class="badge gray">Draft assessment · /100</span><span class="status-text">Pass threshold: ${state.settings.pass}</span></div>${table(["Student", "Draft mark /100"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><input class="money-input mark-input" type="number" min="0" max="100" step="0.01" data-student="${s.id}" aria-label="Mark for ${esc(s.name)}" value="${state.marks[s.id] ?? ""}"></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="publish">Approve & publish ${schoolDataLive ? "results" : "demo results"}</button><span class="status-text">${schoolDataLive ? "Draft marks are stored securely in Neon." : "Draft marks save on change in this browser."}</span></div><div class="error" id="form-error" role="alert"></div><div class="note">Published results are versioned by class, subject and term, and do not change when draft marks are edited.</div></section>${snap ? `<section class="panel"><div class="panel-heading"><div><h2>${esc(snap.subject || "General")} · published version ${snap.version}</h2><small>${esc(snap.term)}</small></div><div class="quick-actions"><button class="button secondary" id="print-results">Print report</button><button class="button secondary" id="results-csv">Download CSV</button></div></div>${table(["Student", "Published score", "Outcome"], snap.entries.map((e) => `<tr><td>${esc(e.name)}</td><td>${e.score}</td><td><span class="badge ${e.score >= snap.pass ? "" : "amber"}">${e.score >= snap.pass ? "Pass" : "Below threshold"}</span></td></tr>`).join(""))}</section>` : ""}`
+    `<section class="panel"><div class="toolbar"><label for="res-class">Class</label><select id="res-class">${options(schoolClasses(), selectedClass)}</select><label for="res-subject">Subject</label><select id="res-subject">${options(schoolSubjects(), selectedSubject)}</select><span class="badge gray">Draft assessment · /100</span><span class="status-text">Pass threshold: ${state.settings.pass}</span></div>${table(["Student", "Draft mark /100", "Teacher remark"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><input class="money-input mark-input" type="number" min="0" max="100" step="0.01" data-student="${s.id}" aria-label="Mark for ${esc(s.name)}" value="${state.marks[s.id] ?? ""}"></td><td><input class="remark-input" maxlength="160" data-student="${s.id}" aria-label="Remark for ${esc(s.name)}" placeholder="Optional remark" value="${esc(state.remarks[s.id] || "")}"></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="publish">Approve & publish ${schoolDataLive ? "results" : "demo results"}</button><span class="status-text">${schoolDataLive ? "Draft marks are stored securely in Neon." : "Draft marks save on change in this browser."}</span></div><div class="error" id="form-error" role="alert"></div><div class="note">Published results are versioned by class, subject and term, and do not change when draft marks are edited.</div></section>${snap ? `<section class="panel"><div class="panel-heading"><div><h2>${esc(snap.subject || "General")} · published version ${snap.version}</h2><small>${esc(snap.term)}</small></div><div class="quick-actions"><button class="button secondary" id="print-results">Print report</button><button class="button secondary" id="results-csv">Download CSV</button></div></div>${table(["Student", "Published score", "Grade", "Outcome", "Remark"], snap.entries.map((e) => `<tr><td>${esc(e.name)}</td><td>${e.score}</td><td>${resultGrade(e.score, snap.pass)}</td><td><span class="badge ${e.score >= snap.pass ? "" : "amber"}">${e.score >= snap.pass ? "Pass" : "Below threshold"}</span></td><td>${esc(e.remark || "—")}</td></tr>`).join(""))}</section>` : ""}`
   );
 }
 async function printClassReportCards() {
@@ -697,6 +710,7 @@ async function printClassReportCards() {
         subject: result.subject_name,
         score: Number(result.score),
         maximum: Number(result.maximum_score),
+        remark: result.remark || "",
       }));
     } else {
       students = activeStudents()
@@ -719,6 +733,7 @@ async function printClassReportCards() {
           subject: snapshot.subject || "General",
           score: Number(entry.score),
           maximum: 100,
+          remark: entry.remark || "",
         })),
       );
     }
@@ -738,14 +753,14 @@ async function printClassReportCards() {
           passed = marks.filter(
             (mark) => (mark.score / mark.maximum) * 100 >= state.settings.pass,
           ).length;
-        return `<section class="report-card"><header><h1>${esc(state.settings.name)}</h1><div>Student Report Card · ${esc(state.settings.term)}</div></header><div class="details"><div><strong>Student:</strong> ${esc(student.name)}</div><div><strong>Student number:</strong> ${esc(student.admission)}</div><div><strong>Class:</strong> ${esc(selectedClass)}</div><div><strong>Subjects published:</strong> ${marks.length}</div></div><table><thead><tr><th>Subject</th><th>Score</th><th>Outcome</th></tr></thead><tbody>${marks
+        return `<section class="report-card"><header><h1>${esc(state.settings.name)}</h1><div>Student Report Card · ${esc(state.settings.term)}</div></header><div class="details"><div><strong>Student:</strong> ${esc(student.name)}</div><div><strong>Student number:</strong> ${esc(student.admission)}</div><div><strong>Class:</strong> ${esc(selectedClass)}</div><div><strong>Subjects published:</strong> ${marks.length}</div></div><table><thead><tr><th>Subject</th><th>Score</th><th>Grade</th><th>Outcome</th><th>Teacher remark</th></tr></thead><tbody>${marks
           .map((mark) => {
             const percentage = (mark.score / mark.maximum) * 100;
-            return `<tr><td>${esc(mark.subject)}</td><td>${mark.score} / ${mark.maximum}</td><td>${percentage >= state.settings.pass ? "Pass" : "Below threshold"}</td></tr>`;
+            return `<tr><td>${esc(mark.subject)}</td><td>${mark.score} / ${mark.maximum}</td><td>${resultGrade(percentage)}</td><td>${percentage >= state.settings.pass ? "Pass" : "Below threshold"}</td><td>${esc(mark.remark || "—")}</td></tr>`;
           })
           .join(
             "",
-          )}</tbody></table><div class="summary"><span>Average: <strong>${average.toFixed(1)}%</strong></span><span>Subjects passed: <strong>${passed} of ${marks.length}</strong></span><span>Overall: <strong>${marks.length && average >= state.settings.pass ? "Pass" : "Below threshold"}</strong></span></div><div class="signatures"><span>Class teacher</span><span>Head teacher</span></div></section>`;
+          )}</tbody></table><div class="summary"><span>Average: <strong>${average.toFixed(1)}%</strong></span><span>Overall grade: <strong>${resultGrade(average)}</strong></span><span>Subjects passed: <strong>${passed} of ${marks.length}</strong></span><span>Overall: <strong>${marks.length && average >= state.settings.pass ? "Pass" : "Below threshold"}</strong></span></div><div class="signatures"><span>Class teacher</span><span>Head teacher</span></div></section>`;
       })
       .join("");
     popup.document.open();
@@ -787,7 +802,7 @@ function printResultsReport() {
     return;
   }
   popup.document.write(
-    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Results ${esc(selectedClass)}</title><style>@page{size:A4 portrait;margin:14mm}body{font:12px Arial;color:#203330;margin:0;padding:16px}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:20px}h1{margin:0 0 6px}.summary{display:flex;gap:18px;flex-wrap:wrap;margin:14px 0}.summary span{padding:7px 10px;background:#edf5ef;border-radius:5px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce6e1;text-align:left}th{background:#eaf4ef}button{margin:18px 0;padding:10px 15px;background:#146a56;color:#fff;border:0;border-radius:6px}@media print{button{display:none}body{padding:0}}</style></head><body><header><h1>${esc(state.settings.name)}</h1><div>Published results · ${esc(selectedClass)} · ${esc(result.subject || "General")} · ${esc(result.term)} · Version ${result.version}</div></header><div class="summary"><span>Students: ${result.entries.length}</span><span>Class average: ${average.toFixed(1)}%</span><span>Passed: ${passed}</span><span>Below threshold: ${result.entries.length - passed}</span><span>Pass mark: ${result.pass}%</span></div><table><thead><tr><th>Student number</th><th>Student name</th><th>Score /100</th><th>Outcome</th></tr></thead><tbody>${result.entries.map((entry) => `<tr><td>${esc(entry.admission)}</td><td>${esc(entry.name)}</td><td>${esc(entry.score)}</td><td>${entry.score >= result.pass ? "Pass" : "Below threshold"}</td></tr>`).join("")}</tbody></table><button onclick="window.print()">Print or save as PDF</button></body></html>`,
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Results ${esc(selectedClass)}</title><style>@page{size:A4 portrait;margin:14mm}body{font:12px Arial;color:#203330;margin:0;padding:16px}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:20px}h1{margin:0 0 6px}.summary{display:flex;gap:18px;flex-wrap:wrap;margin:14px 0}.summary span{padding:7px 10px;background:#edf5ef;border-radius:5px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce6e1;text-align:left}th{background:#eaf4ef}button{margin:18px 0;padding:10px 15px;background:#146a56;color:#fff;border:0;border-radius:6px}@media print{button{display:none}body{padding:0}}</style></head><body><header><h1>${esc(state.settings.name)}</h1><div>Published results · ${esc(selectedClass)} · ${esc(result.subject || "General")} · ${esc(result.term)} · Version ${result.version}</div></header><div class="summary"><span>Students: ${result.entries.length}</span><span>Class average: ${average.toFixed(1)}%</span><span>Passed: ${passed}</span><span>Below threshold: ${result.entries.length - passed}</span><span>Pass mark: ${result.pass}%</span></div><table><thead><tr><th>Student number</th><th>Student name</th><th>Score /100</th><th>Grade</th><th>Outcome</th><th>Remark</th></tr></thead><tbody>${result.entries.map((entry) => `<tr><td>${esc(entry.admission)}</td><td>${esc(entry.name)}</td><td>${esc(entry.score)}</td><td>${resultGrade(entry.score, result.pass)}</td><td>${entry.score >= result.pass ? "Pass" : "Below threshold"}</td><td>${esc(entry.remark || "—")}</td></tr>`).join("")}</tbody></table><button onclick="window.print()">Print or save as PDF</button></body></html>`,
   );
   popup.document.close();
 }
@@ -806,8 +821,10 @@ function downloadResultsCsv() {
         "Term",
         "Version",
         "Score /100",
+        "Grade",
         "Pass mark",
         "Outcome",
+        "Teacher remark",
       ],
       ...result.entries.map((entry) => [
         entry.admission,
@@ -817,8 +834,10 @@ function downloadResultsCsv() {
         result.term,
         result.version,
         entry.score,
+        resultGrade(entry.score, result.pass),
         result.pass,
         entry.score >= result.pass ? "Pass" : "Below threshold",
+        entry.remark || "",
       ]),
     ]),
     blob = new Blob(["\ufeff" + content], { type: "text/csv;charset=utf-8" }),
@@ -1494,6 +1513,13 @@ function wire() {
           $("#form-error").textContent = "";
         }),
     );
+    document.querySelectorAll(".remark-input").forEach(
+      (input) =>
+        (input.onchange = () => {
+          state.remarks[input.dataset.student] = input.value.trim();
+          save();
+        }),
+    );
     $("#publish").onclick = async () => {
       try {
         const inputs = [...document.querySelectorAll(".mark-input")];
@@ -1504,6 +1530,12 @@ function wire() {
         inputs.forEach(
           (i) => (state.marks[i.dataset.student] = Number(i.value)),
         );
+        document
+          .querySelectorAll(".remark-input")
+          .forEach(
+            (input) =>
+              (state.remarks[input.dataset.student] = input.value.trim()),
+          );
         if (
           !confirm(
             `Approve and publish a new ${schoolDataLive ? "" : "fictional "}result snapshot for this class?`,
@@ -1522,6 +1554,10 @@ function wire() {
               marks: inputs.map((input) => ({
                 studentId: input.dataset.student,
                 score: Number(input.value),
+                remark:
+                  document.querySelector(
+                    `.remark-input[data-student="${input.dataset.student}"]`,
+                  )?.value || "",
               })),
             }),
           });
