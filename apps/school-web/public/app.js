@@ -1114,6 +1114,9 @@ function reports() {
       schoolDataLive
         ? "Download school records for review and administration."
         : "Download fictional records for review—not official school documents.",
+      role === "Administrator"
+        ? '<button class="button" id="school-backup">Download complete backup</button>'
+        : "",
     ) +
     `<div class="stack"><section class="panel"><div class="panel-heading"><div><h2>Payment status report</h2><p>Separate students with outstanding balances from students who are fully paid.</p></div><span class="badge gray">${esc(state.settings.term)}</span></div><div class="quick-actions"><button class="button" id="payment-excel">Download Excel</button><button class="button secondary" id="payment-print">Print or save as PDF</button></div><div class="note">Credit balances are included with fully paid students and clearly marked as credit.</div></section><section class="panel">${[
       [
@@ -1141,6 +1144,42 @@ function reports() {
       )}<div class="note">${schoolDataLive ? "Exports contain the current school records stored in Neon." : "Exports contain this browser’s fictional demonstration records."}</div></section></div>`
   );
 }
+async function downloadSchoolBackup() {
+  try {
+    let backup;
+    if (schoolDataLive) backup = (await schoolApi("/api/school/backup")).backup;
+    else
+      backup = {
+        format: "digital-data-school-demo-backup",
+        version: 1,
+        generatedAt: new Date().toISOString(),
+        school: state.settings,
+        students: state.students,
+        attendance: state.attendance,
+        charges: state.charges,
+        payments: state.payments,
+        publishedResults: state.published,
+      };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], {
+        type: "application/json;charset=utf-8",
+      }),
+      url = URL.createObjectURL(blob),
+      anchor = document.createElement("a"),
+      date = new Date().toISOString().slice(0, 10),
+      school = state.settings.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
+    anchor.href = url;
+    anchor.download = `${school || "school"}-backup-${date}.json`;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("Complete school backup downloaded.");
+    if (schoolDataLive && role === "Administrator") await loadSchoolActivity();
+  } catch (error) {
+    toast(error.message);
+  }
+}
 function activityDescription(item) {
   const details = item.details || {};
   return (
@@ -1150,6 +1189,7 @@ function activityDescription(item) {
       "student.status_changed": `Changed student status to ${details.status || "unknown"}`,
       "students.imported": `Imported ${details.count || 0} students`,
       "students.promoted": `Promoted ${details.count || 0} students from ${details.fromClass || "a class"} to ${details.toClass || "another class"}`,
+      "backup.downloaded": `Downloaded a complete school data backup`,
       "payment.recorded": `Recorded payment ${details.receiptNumber || ""} for ${money(Number(details.amountBututs || 0))}`,
       "charge.created": `Added ${details.description || "fee"} charge of ${money(Number(details.amountBututs || 0))}`,
       "class_charge.created": `Charged ${details.students || 0} students in ${details.className || "a class"}`,
@@ -1969,6 +2009,7 @@ function wire() {
     );
   }
   if (view === "reports") {
+    if ($("#school-backup")) $("#school-backup").onclick = downloadSchoolBackup;
     document
       .querySelectorAll(".export")
       .forEach((b) => (b.onclick = () => download(b.dataset.report)));
