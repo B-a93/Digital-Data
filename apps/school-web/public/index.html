@@ -79,7 +79,7 @@
             ></div>
           </form>
         </div>
-          <div id="reset-password-panel" hidden>
+        <div id="reset-password-panel" hidden>
           <span class="eyebrow">CREATE PASSWORD</span>
           <h1>Choose your password</h1>
           <p>Use at least eight characters and keep it private.</p>
@@ -108,22 +108,68 @@
             </div>
             <button class="button login-button">Save password</button>
             <div id="reset-password-error" class="error" role="alert"></div>
-            </form>
-          </div>
-          <div id="invitation-panel" hidden>
-            <span class="eyebrow">SCHOOL INVITATION</span>
-            <h1 id="invitation-title">Activate your portal</h1>
-            <p id="invitation-details">Checking your secure invitation…</p>
-            <form id="invitation-form">
-              <div class="field"><label for="invitation-name">Your name</label><input id="invitation-name" name="name" autocomplete="name" required /></div>
-              <div class="field"><label for="invitation-email">Invited email</label><input id="invitation-email" name="email" type="email" autocomplete="username" readonly required /></div>
-              <div class="field"><label for="invitation-password">Create password</label><input id="invitation-password" name="password" type="password" autocomplete="new-password" minlength="8" required /></div>
-              <div class="field"><label for="invitation-confirmation">Confirm password</label><input id="invitation-confirmation" name="confirmation" type="password" autocomplete="new-password" minlength="8" required /></div>
-              <button class="button login-button">Create account and activate</button>
-              <button type="button" id="invitation-existing" class="text-button auth-link">I already have an account</button>
-              <div id="invitation-error" class="error" role="alert"></div>
-            </form>
-          </div>
+          </form>
+        </div>
+        <div id="invitation-panel" hidden>
+          <span class="eyebrow">SCHOOL INVITATION</span>
+          <h1 id="invitation-title">Activate your portal</h1>
+          <p id="invitation-details">Checking your secure invitation…</p>
+          <form id="invitation-form">
+            <div class="field">
+              <label for="invitation-name">Your name</label
+              ><input
+                id="invitation-name"
+                name="name"
+                autocomplete="name"
+                required
+              />
+            </div>
+            <div class="field">
+              <label for="invitation-email">Invited email</label
+              ><input
+                id="invitation-email"
+                name="email"
+                type="email"
+                autocomplete="username"
+                readonly
+                required
+              />
+            </div>
+            <div class="field">
+              <label for="invitation-password">Create password</label
+              ><input
+                id="invitation-password"
+                name="password"
+                type="password"
+                autocomplete="new-password"
+                minlength="8"
+                required
+              />
+            </div>
+            <div class="field">
+              <label for="invitation-confirmation">Confirm password</label
+              ><input
+                id="invitation-confirmation"
+                name="confirmation"
+                type="password"
+                autocomplete="new-password"
+                minlength="8"
+                required
+              />
+            </div>
+            <button class="button login-button">
+              Create account and activate
+            </button>
+            <button
+              type="button"
+              id="invitation-existing"
+              class="text-button auth-link"
+            >
+              I already have an account
+            </button>
+            <div id="invitation-error" class="error" role="alert"></div>
+          </form>
+        </div>
         <p class="login-help">
           Accounts are created by the school administrator. Student records
           remain demo data during this development stage.
@@ -163,8 +209,8 @@
           </div>
         </header>
         <div class="demo-banner">
-          <span class="demo-pill">DEVELOPMENT</span> Secure login is active.
-          Visible school records are still fictional browser data.
+          <span class="demo-pill" id="workspace-status">PILOT</span>
+          <span id="workspace-message">Secure login is active.</span>
           <button id="reset" class="text-button">Reset demo</button>
         </div>
         <main id="content"></main>
