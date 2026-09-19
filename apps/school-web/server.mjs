@@ -251,6 +251,117 @@ const server = http.createServer(async (req, res) => {
       json(res, 200, { activity: result.rows });
       return;
     }
+    if (pathname === "/api/school/backup") {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method !== "GET") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const [
+        school,
+        classes,
+        subjects,
+        students,
+        attendance,
+        feeTypes,
+        charges,
+        payments,
+        assessments,
+        marks,
+        staff,
+        activity,
+      ] = await Promise.all([
+        query(
+          `SELECT id,name,slug,current_term,pass_mark,grade_scale,school_type,region,district,
+             contact_name,contact_email,contact_phone,status,created_at,updated_at
+           FROM schools WHERE id=$1`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT id,name,created_at FROM classes WHERE school_id=$1 ORDER BY name`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT id,name,created_at FROM subjects WHERE school_id=$1 ORDER BY name`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT id,class_id,student_number,full_name,guardian_name,guardian_phone,status,created_at,updated_at
+           FROM students WHERE school_id=$1 ORDER BY full_name`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT id,student_id,attendance_date,status,recorded_at
+           FROM attendance WHERE school_id=$1 ORDER BY attendance_date,student_id`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT id,name,created_at FROM fee_types WHERE school_id=$1 ORDER BY name`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT id,student_id,fee_type_id,description,amount_bututs,created_at
+           FROM fee_charges WHERE school_id=$1 ORDER BY created_at`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT id,student_id,amount_bututs,receipt_number,paid_on,created_at
+           FROM payments WHERE school_id=$1 ORDER BY paid_on,created_at`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT id,class_id,subject_id,title,term,maximum_score,published_at,created_at
+           FROM assessments WHERE school_id=$1 ORDER BY created_at`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT am.assessment_id,am.student_id,am.score,am.remark,am.updated_at
+           FROM assessment_marks am JOIN assessments a ON a.id=am.assessment_id
+           WHERE a.school_id=$1 ORDER BY am.assessment_id,am.student_id`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT full_name,email,role,invitation_status,invited_at,accepted_at
+           FROM staff_invitations WHERE school_id=$1 ORDER BY full_name`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT actor_email,action,entity_type,entity_id,details,created_at
+           FROM audit_logs WHERE school_id=$1 ORDER BY created_at`,
+          [context.school_id],
+        ),
+      ]);
+      const backup = {
+        format: "digital-data-school-backup",
+        version: 1,
+        generatedAt: new Date().toISOString(),
+        school: school.rows[0],
+        classes: classes.rows,
+        subjects: subjects.rows,
+        students: students.rows,
+        attendance: attendance.rows,
+        feeTypes: feeTypes.rows,
+        charges: charges.rows,
+        payments: payments.rows,
+        assessments: assessments.rows,
+        assessmentMarks: marks.rows,
+        staff: staff.rows,
+        activity: activity.rows,
+      };
+      await recordAudit(
+        context,
+        "backup.downloaded",
+        "school",
+        context.school_id,
+        {
+          students: students.rowCount,
+          assessments: assessments.rowCount,
+        },
+      );
+      json(res, 200, { backup });
+      return;
+    }
     if (pathname === "/api/school/students") {
       const context = await requireSchoolContext(req);
       if (req.method === "GET") {
