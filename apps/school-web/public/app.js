@@ -465,7 +465,7 @@ function fees() {
         ? "Review charges, record receipts and see outstanding balances."
         : "Review charges, record demo receipts and see outstanding balances.",
     ) +
-    `<div class="grid"><section class="panel"><div class="panel-heading"><h2>Record ${schoolDataLive ? "a" : "a demo"} payment</h2></div><form id="payment-form"><div class="field"><label for="pay-student">Student</label><select id="pay-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)} · ${esc(s.admission)}</option>`).join("")}</select></div><div class="field"><label for="amount">Amount in dalasi</label><input id="amount" name="amount" type="text" inputmode="decimal" required placeholder="1500.00"></div><div class="note">Overpayment becomes a displayed credit, not an automatic refund.</div><div class="form-actions"><button class="button">Record payment</button></div><div id="form-error" class="error" role="alert"></div><div id="receipt" role="status"></div></form></section><section class="panel"><div class="panel-heading"><h2>Add ${schoolDataLive ? "a" : "a demo"} charge</h2></div><form id="charge-form"><div class="field"><label for="charge-student">Student</label><select id="charge-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div><div class="field"><label for="charge-label">Fee type</label><select id="charge-label" name="label">${options(state.settings.feeTypes, state.settings.feeTypes[0])}</select></div><div class="field"><label for="charge-amount">Amount in dalasi</label><input id="charge-amount" name="amount" inputmode="decimal" required placeholder="1500.00"></div><div class="form-actions"><button class="button secondary">Add charge</button></div><div id="charge-error" class="error" role="alert"></div></form></section><section class="panel wide"><div class="panel-heading"><h2>Student balances</h2><small>Negative balance = credit</small></div>${table(["Student", "Class", "Balance", "Status"], state.students.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td>${money(balance(state, s.id))}</td><td>${badge(balance(state, s.id))}</td></tr>`).join(""))}</section><section class="panel wide"><div class="panel-heading"><h2>Recent ${schoolDataLive ? "" : "demo "}receipts</h2></div>${table(
+    `<div class="grid"><section class="panel"><div class="panel-heading"><h2>Record ${schoolDataLive ? "a" : "a demo"} payment</h2></div><form id="payment-form"><div class="field"><label for="pay-student">Student</label><select id="pay-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)} · ${esc(s.admission)}</option>`).join("")}</select></div><div class="field"><label for="amount">Amount in dalasi</label><input id="amount" name="amount" type="text" inputmode="decimal" required placeholder="1500.00"></div><div class="note">Overpayment becomes a displayed credit, not an automatic refund.</div><div class="form-actions"><button class="button">Record payment</button></div><div id="form-error" class="error" role="alert"></div><div id="receipt" role="status"></div></form></section><section class="panel"><div class="panel-heading"><h2>Add ${schoolDataLive ? "a" : "a demo"} charge</h2></div><form id="charge-form"><div class="field"><label for="charge-student">Student</label><select id="charge-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div><div class="field"><label for="charge-label">Fee type</label><select id="charge-label" name="label">${options(state.settings.feeTypes, state.settings.feeTypes[0])}</select></div><div class="field"><label for="charge-amount">Amount in dalasi</label><input id="charge-amount" name="amount" inputmode="decimal" required placeholder="1500.00"></div><div class="form-actions"><button class="button secondary">Add charge</button></div><div id="charge-error" class="error" role="alert"></div></form></section><section class="panel wide"><div class="panel-heading"><div><h2>Charge an entire class</h2><p>Apply the same fee to every active student in a class.</p></div></div><form id="class-charge-form"><div class="form-grid"><div class="field"><label for="class-charge-class">Class</label><select id="class-charge-class" name="className">${options(schoolClasses(), schoolClasses()[0])}</select></div><div class="field"><label for="class-charge-label">Fee type</label><select id="class-charge-label" name="label">${options(state.settings.feeTypes, state.settings.feeTypes[0])}</select></div><div class="field"><label for="class-charge-amount">Amount per student in dalasi</label><input id="class-charge-amount" name="amount" inputmode="decimal" required placeholder="1500.00"></div></div><div class="form-actions"><button class="button secondary">Apply class charge</button><span class="status-text">Only active students will be charged.</span></div><div id="class-charge-error" class="error" role="alert"></div></form></section><section class="panel wide"><div class="panel-heading"><h2>Student balances</h2><small>Negative balance = credit</small></div>${table(["Student", "Class", "Balance", "Status"], state.students.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td>${money(balance(state, s.id))}</td><td>${badge(balance(state, s.id))}</td></tr>`).join(""))}</section><section class="panel wide"><div class="panel-heading"><h2>Recent ${schoolDataLive ? "" : "demo "}receipts</h2></div>${table(
       ["Receipt", "Student", "Date", "Amount", "Action"],
       state.payments
         .slice()
@@ -1021,6 +1021,55 @@ function wire() {
         if (persisted) toast("Demo charge saved.");
       } catch (err) {
         $("#charge-error").textContent = err.message;
+        e.target.querySelector(".button").disabled = false;
+      }
+    };
+    $("#class-charge-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const form = new FormData(e.target),
+        className = form.get("className"),
+        label = form.get("label").trim(),
+        classStudents = activeStudents().filter(
+          (student) => student.class === className,
+        );
+      try {
+        const amount = cents(form.get("amount"));
+        if (!label || !classStudents.length)
+          throw Error("Choose a class with active students and a fee type.");
+        if (
+          !confirm(
+            `Charge ${money(amount)} to ${classStudents.length} active students in ${className}?`,
+          )
+        )
+          return;
+        const button = e.target.querySelector(".button");
+        button.disabled = true;
+        if (schoolDataLive) {
+          const result = await schoolApi("/api/school/class-charges", {
+            method: "POST",
+            body: JSON.stringify({
+              className,
+              description: label,
+              amountBututs: amount,
+            }),
+          });
+          await loadSchoolFinance();
+          render();
+          toast(`${result.charged} students charged successfully.`);
+          return;
+        }
+        for (const student of classStudents)
+          state.charges.push({
+            id: crypto.randomUUID(),
+            studentId: student.id,
+            label,
+            amount,
+          });
+        save();
+        render();
+        toast(`${classStudents.length} demo students charged.`);
+      } catch (err) {
+        $("#class-charge-error").textContent = err.message;
         e.target.querySelector(".button").disabled = false;
       }
     };
