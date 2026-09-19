@@ -567,8 +567,76 @@ function results() {
         ? "Prepare an assessment, then publish a versioned snapshot."
         : "Prepare a single demo assessment, then publish a versioned snapshot.",
     ) +
-    `<section class="panel"><div class="toolbar"><label for="res-class">Class</label><select id="res-class">${options(schoolClasses(), selectedClass)}</select><span class="badge gray">Draft assessment · /100</span><span class="status-text">Pass threshold: ${state.settings.pass}</span></div>${table(["Student", "Draft mark /100"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><input class="money-input mark-input" type="number" min="0" max="100" step="0.01" data-student="${s.id}" aria-label="Mark for ${esc(s.name)}" value="${state.marks[s.id] ?? ""}"></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="publish">Approve & publish ${schoolDataLive ? "results" : "demo results"}</button><span class="status-text">${schoolDataLive ? "Draft marks are stored securely in Neon." : "Draft marks save on change in this browser."}</span></div><div class="error" id="form-error" role="alert"></div><div class="note">Published results are versioned and do not change when draft marks are edited.</div></section>${snap ? `<section class="panel"><div class="panel-heading"><h2>Published snapshot · version ${snap.version}</h2><small>${esc(snap.term)}</small></div>${table(["Student", "Published score", "Outcome"], snap.entries.map((e) => `<tr><td>${esc(e.name)}</td><td>${e.score}</td><td><span class="badge ${e.score >= snap.pass ? "" : "amber"}">${e.score >= snap.pass ? "Pass" : "Below threshold"}</span></td></tr>`).join(""))}</section>` : ""}`
+    `<section class="panel"><div class="toolbar"><label for="res-class">Class</label><select id="res-class">${options(schoolClasses(), selectedClass)}</select><span class="badge gray">Draft assessment · /100</span><span class="status-text">Pass threshold: ${state.settings.pass}</span></div>${table(["Student", "Draft mark /100"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><input class="money-input mark-input" type="number" min="0" max="100" step="0.01" data-student="${s.id}" aria-label="Mark for ${esc(s.name)}" value="${state.marks[s.id] ?? ""}"></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="publish">Approve & publish ${schoolDataLive ? "results" : "demo results"}</button><span class="status-text">${schoolDataLive ? "Draft marks are stored securely in Neon." : "Draft marks save on change in this browser."}</span></div><div class="error" id="form-error" role="alert"></div><div class="note">Published results are versioned and do not change when draft marks are edited.</div></section>${snap ? `<section class="panel"><div class="panel-heading"><div><h2>Published snapshot · version ${snap.version}</h2><small>${esc(snap.term)}</small></div><div class="quick-actions"><button class="button secondary" id="print-results">Print report</button><button class="button secondary" id="results-csv">Download CSV</button></div></div>${table(["Student", "Published score", "Outcome"], snap.entries.map((e) => `<tr><td>${esc(e.name)}</td><td>${e.score}</td><td><span class="badge ${e.score >= snap.pass ? "" : "amber"}">${e.score >= snap.pass ? "Pass" : "Below threshold"}</span></td></tr>`).join(""))}</section>` : ""}`
   );
+}
+function currentPublishedResult() {
+  return state.published
+    .filter(
+      (item) =>
+        item.class === selectedClass && item.term === state.settings.term,
+    )
+    .at(-1);
+}
+function printResultsReport() {
+  const result = currentPublishedResult();
+  if (!result) {
+    toast("Publish the class results before printing.");
+    return;
+  }
+  const popup = window.open("", "_blank"),
+    passed = result.entries.filter(
+      (entry) => entry.score >= result.pass,
+    ).length,
+    average = result.entries.length
+      ? result.entries.reduce((sum, entry) => sum + entry.score, 0) /
+        result.entries.length
+      : 0;
+  if (!popup) {
+    toast("Allow pop-ups to open the printable results report.");
+    return;
+  }
+  popup.document.write(
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Results ${esc(selectedClass)}</title><style>@page{size:A4 portrait;margin:14mm}body{font:12px Arial;color:#203330;margin:0;padding:16px}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:20px}h1{margin:0 0 6px}.summary{display:flex;gap:18px;flex-wrap:wrap;margin:14px 0}.summary span{padding:7px 10px;background:#edf5ef;border-radius:5px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce6e1;text-align:left}th{background:#eaf4ef}button{margin:18px 0;padding:10px 15px;background:#146a56;color:#fff;border:0;border-radius:6px}@media print{button{display:none}body{padding:0}}</style></head><body><header><h1>${esc(state.settings.name)}</h1><div>Published results · ${esc(selectedClass)} · ${esc(result.term)} · Version ${result.version}</div></header><div class="summary"><span>Students: ${result.entries.length}</span><span>Class average: ${average.toFixed(1)}%</span><span>Passed: ${passed}</span><span>Below threshold: ${result.entries.length - passed}</span><span>Pass mark: ${result.pass}%</span></div><table><thead><tr><th>Student number</th><th>Student name</th><th>Score /100</th><th>Outcome</th></tr></thead><tbody>${result.entries.map((entry) => `<tr><td>${esc(entry.admission)}</td><td>${esc(entry.name)}</td><td>${esc(entry.score)}</td><td>${entry.score >= result.pass ? "Pass" : "Below threshold"}</td></tr>`).join("")}</tbody></table><button onclick="window.print()">Print or save as PDF</button></body></html>`,
+  );
+  popup.document.close();
+}
+function downloadResultsCsv() {
+  const result = currentPublishedResult();
+  if (!result) {
+    toast("Publish the class results before downloading.");
+    return;
+  }
+  const content = csv([
+      [
+        "Student number",
+        "Student name",
+        "Class",
+        "Term",
+        "Version",
+        "Score /100",
+        "Pass mark",
+        "Outcome",
+      ],
+      ...result.entries.map((entry) => [
+        entry.admission,
+        entry.name,
+        result.class,
+        result.term,
+        result.version,
+        entry.score,
+        result.pass,
+        entry.score >= result.pass ? "Pass" : "Below threshold",
+      ]),
+    ]),
+    blob = new Blob(["\ufeff" + content], { type: "text/csv;charset=utf-8" }),
+    url = URL.createObjectURL(blob),
+    anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${selectedClass.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${result.term.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-results.csv`;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast("Published results CSV downloaded.");
 }
 function reports() {
   return (
@@ -1133,6 +1201,8 @@ function wire() {
     };
   }
   if (view === "results") {
+    if ($("#print-results")) $("#print-results").onclick = printResultsReport;
+    if ($("#results-csv")) $("#results-csv").onclick = downloadResultsCsv;
     $("#res-class").onchange = async (e) => {
       selectedClass = e.target.value;
       if (schoolDataLive)
