@@ -127,6 +127,13 @@ async function requireSchoolContext(req) {
     );
   return { ...user, ...result.rows[0] };
 }
+function requireRole(context, ...allowed) {
+  if (context.role === "owner" || allowed.includes(context.role)) return;
+  throw Object.assign(
+    new Error("Your school role does not allow this action."),
+    { status: 403 },
+  );
+}
 const server = http.createServer(async (req, res) => {
   try {
     const requestUrl = new URL(req.url, "http://localhost");
@@ -214,6 +221,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       if (req.method === "POST") {
+        requireRole(context, "administrator");
         const data = await readJsonBody(req),
           studentNumber = String(data.studentNumber || "")
             .trim()
@@ -253,6 +261,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === "/api/school/settings") {
       const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
       if (req.method !== "PATCH") {
         json(res, 405, { error: "Method not allowed" });
         return;
@@ -285,6 +294,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === "/api/school/classes") {
       const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
       if (req.method !== "POST") {
         json(res, 405, { error: "Method not allowed" });
         return;
@@ -309,6 +319,7 @@ const server = http.createServer(async (req, res) => {
     );
     if (classRoute) {
       const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
       if (req.method !== "DELETE") {
         json(res, 405, { error: "Method not allowed" });
         return;
@@ -330,6 +341,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === "/api/school/fee-types") {
       const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
       if (req.method !== "POST") {
         json(res, 405, { error: "Method not allowed" });
         return;
@@ -354,6 +366,7 @@ const server = http.createServer(async (req, res) => {
     );
     if (feeTypeRoute) {
       const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
       if (req.method !== "DELETE") {
         json(res, 405, { error: "Method not allowed" });
         return;
@@ -376,6 +389,7 @@ const server = http.createServer(async (req, res) => {
     );
     if (studentRoute) {
       const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
       if (req.method !== "PATCH") {
         json(res, 405, { error: "Method not allowed" });
         return;
@@ -426,6 +440,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === "/api/school/finance") {
       const context = await requireSchoolContext(req);
+      requireRole(context, "administrator", "finance");
       if (req.method !== "GET") {
         json(res, 405, { error: "Method not allowed" });
         return;
@@ -455,6 +470,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === "/api/school/charges") {
       const context = await requireSchoolContext(req);
+      requireRole(context, "administrator", "finance");
       if (req.method !== "POST") {
         json(res, 405, { error: "Method not allowed" });
         return;
@@ -502,6 +518,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === "/api/school/payments") {
       const context = await requireSchoolContext(req);
+      requireRole(context, "administrator", "finance");
       if (req.method !== "POST") {
         json(res, 405, { error: "Method not allowed" });
         return;
@@ -559,6 +576,7 @@ const server = http.createServer(async (req, res) => {
             ? requestUrl.searchParams.get("class") || ""
             : "",
         ).trim();
+      requireRole(context, "administrator", "teacher");
       if (req.method === "GET") {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(attendanceDate) || !className) {
           json(res, 400, { error: "Choose a valid class and date." });
@@ -638,6 +656,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === "/api/school/results") {
       const context = await requireSchoolContext(req);
+      requireRole(context, "administrator", "teacher");
       if (req.method === "GET") {
         const className = String(
             requestUrl.searchParams.get("class") || "",
