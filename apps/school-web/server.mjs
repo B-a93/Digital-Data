@@ -872,6 +872,86 @@ const server = http.createServer(async (req, res) => {
       json(res, 200, { status: "deleted" });
       return;
     }
+    const studentProfileRoute = pathname.match(
+      /^\/api\/school\/students\/([0-9a-f-]{36})\/profile$/,
+    );
+    if (studentProfileRoute) {
+      const context = await requireSchoolContext(req);
+      if (req.method !== "GET") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const student = (
+        await query(
+          `SELECT st.id,st.student_number,st.full_name,st.guardian_name,st.guardian_phone,
+             st.status,st.created_at,c.name AS class_name,s.current_term,s.pass_mark
+           FROM students st LEFT JOIN classes c ON c.id=st.class_id
+           JOIN schools s ON s.id=st.school_id
+           WHERE st.id=$1 AND st.school_id=$2`,
+          [studentProfileRoute[1], context.school_id],
+        )
+      ).rows[0];
+      if (!student) {
+        json(res, 404, { error: "Student not found." });
+        return;
+      }
+      const canAcademic = ["owner", "administrator", "teacher"].includes(
+          context.role,
+        ),
+        canFinance = ["owner", "administrator", "finance"].includes(
+          context.role,
+        ),
+        attendance = canAcademic
+          ? (
+              await query(
+                `SELECT count(*)::int AS marked,
+                   count(*) FILTER (WHERE status='present')::int AS present,
+                   count(*) FILTER (WHERE status='late')::int AS late,
+                   count(*) FILTER (WHERE status='absent')::int AS absent,
+                   count(*) FILTER (WHERE status='excused')::int AS excused
+                 FROM attendance WHERE school_id=$1 AND student_id=$2`,
+                [context.school_id, student.id],
+              )
+            ).rows[0]
+          : null,
+        finance = canFinance
+          ? (
+              await query(
+                `SELECT
+                   COALESCE((SELECT sum(amount_bututs) FROM fee_charges WHERE school_id=$1 AND student_id=$2),0)::bigint AS charges,
+                   COALESCE((SELECT sum(amount_bututs) FROM payments WHERE school_id=$1 AND student_id=$2),0)::bigint AS payments`,
+                [context.school_id, student.id],
+              )
+            ).rows[0]
+          : null,
+        results = canAcademic
+          ? (
+              await query(
+                `WITH latest AS (
+                   SELECT DISTINCT ON (COALESCE(su.name,'General'))
+                     a.id,COALESCE(su.name,'General') AS subject_name,a.maximum_score
+                   FROM assessments a
+                   JOIN assessment_marks own ON own.assessment_id=a.id AND own.student_id=$2
+                   LEFT JOIN subjects su ON su.id=a.subject_id
+                   WHERE a.school_id=$1 AND a.term=$3 AND a.published_at IS NOT NULL
+                   ORDER BY COALESCE(su.name,'General'),a.published_at DESC
+                 )
+                 SELECT l.subject_name,am.score,l.maximum_score,COALESCE(am.remark,'') AS remark
+                 FROM latest l JOIN assessment_marks am ON am.assessment_id=l.id
+                 WHERE am.student_id=$2 ORDER BY l.subject_name`,
+                [context.school_id, student.id, student.current_term],
+              )
+            ).rows
+          : [];
+      json(res, 200, {
+        student,
+        attendance,
+        finance,
+        results,
+        permissions: { academic: canAcademic, finance: canFinance },
+      });
+      return;
+    }
     const studentRoute = pathname.match(
       /^\/api\/school\/students\/([0-9a-f-]{36})$/,
     );
