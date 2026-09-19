@@ -409,7 +409,7 @@ function fees() {
             `<tr><td>${esc(p.reference)}</td><td>${esc(state.students.find((s) => s.id === p.studentId)?.name)}</td><td>${esc(p.date)}</td><td>${money(p.amount)}</td></tr>`,
         )
         .join(""),
-    )}</section></div>`
+    )}</section><section class="panel wide"><div class="panel-heading"><div><h2>Payment Status Report</h2><p>Print students with outstanding payments separately from students who are fully paid.</p></div><span class="badge gray">${esc(state.settings.term)}</span></div><div class="quick-actions"><button class="button" id="outstanding-print">Print outstanding students</button><button class="button secondary" id="paid-print">Print fully-paid students</button><button class="button secondary" id="payment-print">Print complete report</button><button class="button secondary" id="payment-excel">Download Excel</button></div><div class="note">Each report includes student name, student number, class, charges, amount paid and balance.</div></section></div>`
   );
 }
 function results() {
@@ -736,6 +736,10 @@ function wire() {
     };
   }
   if (view === "fees") {
+    $("#outstanding-print").onclick = () => printPaymentReport("outstanding");
+    $("#paid-print").onclick = () => printPaymentReport("paid");
+    $("#payment-print").onclick = () => printPaymentReport();
+    $("#payment-excel").onclick = downloadPaymentReportExcel;
     $("#payment-form").onsubmit = async (e) => {
       e.preventDefault();
       try {
@@ -1222,7 +1226,7 @@ function downloadPaymentReportExcel() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   toast("Payment status Excel report downloaded.");
 }
-function printPaymentReport() {
+function printPaymentReport(group = "all") {
   const popup = window.open("", "_blank");
   if (!popup) {
     toast("Allow pop-ups to open the printable report.");
@@ -1231,8 +1235,15 @@ function printPaymentReport() {
   const groups = reportGroups(),
     section = (title, rows) =>
       `<section><h2>${esc(title)} <small>${rows.length} students</small></h2><table><thead><tr><th>Student number</th><th>Name</th><th>Class</th><th>Charges</th><th>Paid</th><th>Balance</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${esc(row.admission)}</td><td>${esc(row.name)}</td><td>${esc(row.class)}</td><td>${money(row.charges)}</td><td>${money(row.payments)}</td><td>${money(row.due)}</td></tr>`).join("") || '<tr><td colspan="6">No students in this category.</td></tr>'}</tbody><tfoot><tr><th colspan="3">Total</th><th>${money(rows.reduce((sum, row) => sum + row.charges, 0))}</th><th>${money(rows.reduce((sum, row) => sum + row.payments, 0))}</th><th>${money(rows.reduce((sum, row) => sum + row.due, 0))}</th></tr></tfoot></table></section>`;
+  const content =
+    group === "outstanding"
+      ? section("Students with outstanding payments", groups.outstanding)
+      : group === "paid"
+        ? section("Students fully paid", groups.paid)
+        : section("Students with outstanding payments", groups.outstanding) +
+          section("Students fully paid", groups.paid);
   popup.document.write(
-    `<!doctype html><html><head><title>Payment Status Report</title><style>@page{size:A4 landscape;margin:14mm}body{font:12px Arial;color:#203330;margin:0}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:22px}h1{margin:0 0 6px;font-size:24px}p,small{color:#60736d}section{break-inside:avoid;margin:0 0 28px}h2{font-size:16px;margin-bottom:10px}h2 small{float:right;font-weight:normal}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce6e1;text-align:left}thead th{background:#eaf4ef}td:nth-child(n+4),th:nth-child(n+4){text-align:right}tfoot th{background:#f5f7f6}@media print{button{display:none}}</style></head><body><header><h1>${esc(state.settings.name)}</h1><p>Payment Status Report | ${esc(state.settings.term)} | Generated ${esc(new Date().toLocaleDateString("en-GB"))}</p><button onclick="window.print()">Print or save as PDF</button></header>${section("Students with outstanding payments", groups.outstanding)}${section("Students fully paid", groups.paid)}</body></html>`,
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Payment Status Report</title><style>@page{size:A4 landscape;margin:14mm}body{font:12px Arial;color:#203330;margin:0;padding:12px}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:22px}h1{margin:0 0 6px;font-size:24px}p,small{color:#60736d}section{break-inside:avoid;margin:0 0 28px}h2{font-size:16px;margin-bottom:10px}h2 small{float:right;font-weight:normal}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce6e1;text-align:left}thead th{background:#eaf4ef}td:nth-child(n+4),th:nth-child(n+4){text-align:right}tfoot th{background:#f5f7f6}@media(max-width:700px){body{overflow-x:auto}table{min-width:720px}}@media print{button{display:none}body{padding:0}}</style></head><body><header><h1>${esc(state.settings.name)}</h1><p>Payment Status Report | ${esc(state.settings.term)} | Generated ${esc(new Date().toLocaleDateString("en-GB"))}</p><button onclick="window.print()">Print or save as PDF</button></header>${content}</body></html>`,
   );
   popup.document.close();
 }
