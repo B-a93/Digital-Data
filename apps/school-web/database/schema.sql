@@ -57,6 +57,19 @@ CREATE TABLE IF NOT EXISTS staff_invitations (
 );
 CREATE INDEX IF NOT EXISTS staff_invitation_token_idx ON staff_invitations(invitation_token_hash);
 
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  actor_user_id text NOT NULL,
+  actor_email text,
+  action text NOT NULL,
+  entity_type text NOT NULL,
+  entity_id text,
+  details jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS audit_logs_school_created_idx ON audit_logs(school_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS classes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
