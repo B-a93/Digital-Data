@@ -45,6 +45,8 @@ let view = "dashboard",
   isPlatformOwner = false,
   activeSchool = null,
   schoolDataLive = false,
+  schoolClassIds = new Map(),
+  schoolFeeTypeIds = new Map(),
   platformSchools = [];
 let attendanceDraft = null;
 function localDate() {
@@ -199,8 +201,8 @@ async function schoolApi(path, options = {}) {
 }
 async function loadSchoolStudents() {
   const data = await schoolApi("/api/school/students");
-  if (data.classes.length)
-    state.settings.classes = data.classes.map((item) => item.name);
+  schoolClassIds = new Map(data.classes.map((item) => [item.name, item.id]));
+  state.settings.classes = data.classes.map((item) => item.name);
   state.students = data.students.map((student) => ({
     id: student.id,
     admission: student.student_number,
@@ -215,8 +217,8 @@ async function loadSchoolStudents() {
 }
 async function loadSchoolFinance() {
   const data = await schoolApi("/api/school/finance");
-  if (data.feeTypes.length)
-    state.settings.feeTypes = data.feeTypes.map((item) => item.name);
+  schoolFeeTypeIds = new Map(data.feeTypes.map((item) => [item.name, item.id]));
+  state.settings.feeTypes = data.feeTypes.map((item) => item.name);
   state.charges = data.charges.map((charge) => ({
     id: charge.id,
     studentId: charge.student_id,
@@ -461,7 +463,9 @@ function settings() {
   return (
     heading(
       "School settings",
-      "Manage the school details, classes and fee types used in this demo.",
+      schoolDataLive
+        ? "Manage the school details, classes and fee types."
+        : "Manage the school details, classes and fee types used in this demo.",
     ) +
     `<div class="stack"><section class="panel"><form id="settings-form"><div class="form-grid"><div class="field"><label for="school">School display name</label><input name="school" id="school" value="${esc(state.settings.name)}" maxlength="80" required></div><div class="field"><label for="term-label">Term label</label><input name="term" id="term-label" value="${esc(state.settings.term)}" maxlength="60" required></div><div class="field"><label for="pass">Demo pass threshold /100</label><input name="pass" id="pass" type="number" min="0" max="100" step="1" required value="${state.settings.pass}"></div></div><div class="form-actions"><button class="button">Save settings</button></div><div class="error" id="form-error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Classes and grade levels</h2><small>${schoolClasses().length} configured</small></div><form id="class-form" class="toolbar"><input name="className" maxlength="60" required placeholder="e.g. Grade 10 · A" aria-label="New class name"><button class="button">Add class</button></form><div class="error" id="class-error" role="alert"></div>${table(
       ["Class", "Students", "Action"],
@@ -479,7 +483,7 @@ function settings() {
           return `<tr><td>${esc(name)}</td><td>${count}</td><td><button class="text-button remove-fee-type" data-name="${esc(name)}" ${count || state.settings.feeTypes.length === 1 ? "disabled" : ""}>Remove</button></td></tr>`;
         })
         .join(""),
-    )}<div class="note">A fee type cannot be removed after it has been used for a charge.</div></section><div class="note">Published results retain their original term and threshold. These prototype settings are stored only in this browser.</div></div>`
+    )}<div class="note">A fee type cannot be removed after it has been used for a charge.</div></section><div class="note">Published results retain their original term and threshold. ${schoolDataLive ? "These settings are stored securely in Neon." : "These prototype settings are stored only in this browser."}</div></div>`
   );
 }
 function wire() {
@@ -908,7 +912,7 @@ function wire() {
     $("#payment-print").onclick = printPaymentReport;
   }
   if (view === "settings") {
-    $("#settings-form").onsubmit = (e) => {
+    $("#settings-form").onsubmit = async (e) => {
       e.preventDefault();
       const f = new FormData(e.target),
         name = f.get("school").trim(),
@@ -919,12 +923,30 @@ function wire() {
           "Enter a name, term and valid threshold.";
         return;
       }
+      if (schoolDataLive) {
+        const button = e.target.querySelector(".button");
+        button.disabled = true;
+        try {
+          await schoolApi("/api/school/settings", {
+            method: "PATCH",
+            body: JSON.stringify({ name, term, passMark: pass }),
+          });
+          activeSchool = { ...activeSchool, name, term, passMark: pass };
+          state.settings = { ...state.settings, name, term, pass };
+          render();
+          toast("School settings saved to Neon.");
+        } catch (err) {
+          $("#form-error").textContent = err.message;
+          button.disabled = false;
+        }
+        return;
+      }
       state.settings = { ...state.settings, name, term, pass };
       const persisted = save();
       render();
       if (persisted) toast("Demo settings saved.");
     };
-    $("#class-form").onsubmit = (e) => {
+    $("#class-form").onsubmit = async (e) => {
       e.preventDefault();
       const name = new FormData(e.target).get("className").trim();
       if (!name) {
@@ -939,6 +961,23 @@ function wire() {
         $("#class-error").textContent = "That class already exists.";
         return;
       }
+      if (schoolDataLive) {
+        const button = e.target.querySelector(".button");
+        button.disabled = true;
+        try {
+          await schoolApi("/api/school/classes", {
+            method: "POST",
+            body: JSON.stringify({ name }),
+          });
+          await loadSchoolStudents();
+          render();
+          toast("Class saved to Neon.");
+        } catch (err) {
+          $("#class-error").textContent = err.message;
+          button.disabled = false;
+        }
+        return;
+      }
       state.settings.classes.push(name);
       save();
       render();
@@ -946,10 +985,24 @@ function wire() {
     };
     document.querySelectorAll(".remove-class").forEach(
       (button) =>
-        (button.onclick = () => {
+        (button.onclick = async () => {
           const name = button.dataset.name;
           if (state.students.some((s) => s.class === name)) {
             toast("Move students to another class before removing it.");
+            return;
+          }
+          if (schoolDataLive) {
+            try {
+              await schoolApi(
+                `/api/school/classes/${schoolClassIds.get(name)}`,
+                { method: "DELETE" },
+              );
+              await loadSchoolStudents();
+              render();
+              toast("Class removed.");
+            } catch (err) {
+              toast(err.message);
+            }
             return;
           }
           state.settings.classes = state.settings.classes.filter(
@@ -962,7 +1015,7 @@ function wire() {
           toast("Class removed.");
         }),
     );
-    $("#fee-type-form").onsubmit = (e) => {
+    $("#fee-type-form").onsubmit = async (e) => {
       e.preventDefault();
       const name = new FormData(e.target).get("feeType").trim();
       if (!name) {
@@ -977,6 +1030,23 @@ function wire() {
         $("#fee-type-error").textContent = "That fee type already exists.";
         return;
       }
+      if (schoolDataLive) {
+        const button = e.target.querySelector(".button");
+        button.disabled = true;
+        try {
+          await schoolApi("/api/school/fee-types", {
+            method: "POST",
+            body: JSON.stringify({ name }),
+          });
+          await loadSchoolFinance();
+          render();
+          toast("Fee type saved to Neon.");
+        } catch (err) {
+          $("#fee-type-error").textContent = err.message;
+          button.disabled = false;
+        }
+        return;
+      }
       state.settings.feeTypes.push(name);
       save();
       render();
@@ -984,10 +1054,24 @@ function wire() {
     };
     document.querySelectorAll(".remove-fee-type").forEach(
       (button) =>
-        (button.onclick = () => {
+        (button.onclick = async () => {
           const name = button.dataset.name;
           if (state.charges.some((c) => c.label === name)) {
             toast("This fee type is already used by a charge.");
+            return;
+          }
+          if (schoolDataLive) {
+            try {
+              await schoolApi(
+                `/api/school/fee-types/${schoolFeeTypeIds.get(name)}`,
+                { method: "DELETE" },
+              );
+              await loadSchoolFinance();
+              render();
+              toast("Fee type removed.");
+            } catch (err) {
+              toast(err.message);
+            }
             return;
           }
           state.settings.feeTypes = state.settings.feeTypes.filter(
@@ -1242,6 +1326,7 @@ async function showPortal(session) {
   if (activeSchool) {
     state.settings.name = activeSchool.name;
     state.settings.term = activeSchool.term;
+    state.settings.pass = activeSchool.passMark;
     await loadSchoolStudents();
     await loadSchoolFinance();
     await loadSchoolAttendance();
