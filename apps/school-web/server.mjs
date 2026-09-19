@@ -1194,21 +1194,27 @@ const server = http.createServer(async (req, res) => {
         const className = String(
             requestUrl.searchParams.get("class") || "",
           ).trim(),
-          term = String(requestUrl.searchParams.get("term") || "").trim();
-        if (!className || !term) {
-          json(res, 400, { error: "Choose a valid class and term." });
+          term = String(requestUrl.searchParams.get("term") || "").trim(),
+          subjectName = String(
+            requestUrl.searchParams.get("subject") || "General",
+          ).trim();
+        if (!className || !term || !subjectName) {
+          json(res, 400, { error: "Choose a valid class, subject and term." });
           return;
         }
         const assessment = (
           await query(
-            `SELECT a.id,a.title,a.term,a.maximum_score,a.published_at,
+            `SELECT a.id,a.title,a.term,a.maximum_score,a.published_at,COALESCE(su.name,'General') AS subject_name,
               (SELECT count(*) FROM assessments versions
                WHERE versions.school_id=a.school_id AND versions.class_id=a.class_id
-               AND versions.term=a.term AND versions.published_at IS NOT NULL) AS version
+               AND versions.term=a.term AND COALESCE(versions.subject_id::text,'')=COALESCE(a.subject_id::text,'')
+               AND versions.published_at IS NOT NULL) AS version
              FROM assessments a JOIN classes c ON c.id=a.class_id
-             WHERE a.school_id=$1 AND c.name=$2 AND a.term=$3 AND a.published_at IS NOT NULL
+             LEFT JOIN subjects su ON su.id=a.subject_id
+             WHERE a.school_id=$1 AND c.name=$2 AND a.term=$3 AND COALESCE(su.name,'General')=$4
+             AND a.published_at IS NOT NULL
              ORDER BY a.published_at DESC LIMIT 1`,
-            [context.school_id, className, term],
+            [context.school_id, className, term, subjectName],
           )
         ).rows[0];
         if (!assessment) {
@@ -1228,8 +1234,9 @@ const server = http.createServer(async (req, res) => {
         const data = await readJsonBody(req),
           className = String(data.className || "").trim(),
           term = String(data.term || "").trim(),
+          subjectName = String(data.subjectName || "General").trim(),
           marks = Array.isArray(data.marks) ? data.marks : [];
-        if (!className || !term || !marks.length) {
+        if (!className || !term || !subjectName || !marks.length) {
           json(res, 400, { error: "Enter a result for every student." });
           return;
         }
@@ -1242,6 +1249,13 @@ const server = http.createServer(async (req, res) => {
           ).rows[0];
           if (!schoolClass)
             throw Object.assign(new Error("Class not found."), { status: 404 });
+          const subject = (
+            await client.query(
+              `INSERT INTO subjects(school_id,name) VALUES($1,$2)
+               ON CONFLICT(school_id,name) DO UPDATE SET name=EXCLUDED.name RETURNING id`,
+              [context.school_id, subjectName],
+            )
+          ).rows[0];
           const students = (
             await client.query(
               `SELECT id FROM students WHERE school_id=$1 AND class_id=$2 AND status='active' ORDER BY id`,
@@ -1267,9 +1281,15 @@ const server = http.createServer(async (req, res) => {
             );
           const assessment = (
             await client.query(
-              `INSERT INTO assessments(school_id,class_id,title,term,maximum_score,published_at)
-               VALUES($1,$2,$3,$4,100,now()) RETURNING id,published_at`,
-              [context.school_id, schoolClass.id, "Term result", term],
+              `INSERT INTO assessments(school_id,class_id,subject_id,title,term,maximum_score,published_at)
+               VALUES($1,$2,$3,$4,$5,100,now()) RETURNING id,published_at`,
+              [
+                context.school_id,
+                schoolClass.id,
+                subject.id,
+                `${subjectName} result`,
+                term,
+              ],
             )
           ).rows[0];
           for (const mark of marks)
@@ -1281,8 +1301,8 @@ const server = http.createServer(async (req, res) => {
           const version = (
             await client.query(
               `SELECT count(*)::int AS count FROM assessments
-               WHERE school_id=$1 AND class_id=$2 AND term=$3 AND published_at IS NOT NULL`,
-              [context.school_id, schoolClass.id, term],
+               WHERE school_id=$1 AND class_id=$2 AND subject_id=$3 AND term=$4 AND published_at IS NOT NULL`,
+              [context.school_id, schoolClass.id, subject.id, term],
             )
           ).rows[0].count;
           return { ...assessment, version };
@@ -1295,6 +1315,7 @@ const server = http.createServer(async (req, res) => {
           {
             className,
             term,
+            subjectName,
             version: result.version,
           },
         );
