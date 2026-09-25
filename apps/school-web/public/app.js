@@ -2860,11 +2860,11 @@ async function showPortal(session) {
       await loadSchoolActivity();
     }
   }
-  $("#workspace-status").textContent = activeSchool ? "PILOT" : "DEMO";
-  $("#workspace-message").textContent = activeSchool
-    ? "Secure login and live Neon school records are active."
-    : "Secure login is active. This workspace contains demonstration records.";
-  $("#reset").hidden = Boolean(activeSchool);
+  $(".demo-banner").hidden = Boolean(activeSchool);
+  $("#workspace-status").textContent = "DEMO";
+  $("#workspace-message").textContent =
+    "Secure login is active. This workspace contains demonstration records.";
+  $("#reset").hidden = false;
   authScreen.hidden = true;
   authScreen.style.display = "none";
   layout.hidden = false;
