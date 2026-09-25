@@ -1826,6 +1826,7 @@ const server = http.createServer(async (req, res) => {
       if (req.method === "POST") {
         const data = await readJsonBody(req),
           name = String(data.name || "").trim(),
+          schoolType = String(data.schoolType || "public"),
           slug = String(data.slug || "")
             .trim()
             .toLowerCase(),
@@ -1836,6 +1837,15 @@ const server = http.createServer(async (req, res) => {
         if (
           !name ||
           !adminName ||
+          ![
+            "public",
+            "private",
+            "mission",
+            "community",
+            "vocational",
+            "training_centre",
+            "college",
+          ].includes(schoolType) ||
           !/^[-a-z0-9]{3,60}$/.test(slug) ||
           !/^\S+@\S+\.\S+$/.test(adminEmail)
         ) {
@@ -1852,7 +1862,7 @@ const server = http.createServer(async (req, res) => {
               [
                 name,
                 slug,
-                String(data.schoolType || "public"),
+                schoolType,
                 String(data.region || "").trim() || null,
                 String(data.district || "").trim() || null,
                 adminName,
