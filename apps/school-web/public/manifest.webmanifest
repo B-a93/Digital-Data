@@ -1,7 +1,7 @@
 {
   "name": "School Management Portal",
   "short_name": "School Portal",
-  "description": "Secure school administration for students, attendance, fees, results and reports.",
+  "description": "Secure school administration for schools and skills-training centres in The Gambia.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
