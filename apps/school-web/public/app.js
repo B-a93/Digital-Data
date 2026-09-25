@@ -82,7 +82,8 @@ let view = "dashboard",
   schoolSubjectIds = new Map(),
   platformSchools = [],
   schoolStaff = [],
-  schoolActivity = [];
+  schoolActivity = [],
+  schoolProgrammes = [];
 let resultTerms = [state.settings.term];
 let timetableEntries = [];
 let attendanceDraft = null;
@@ -326,6 +327,14 @@ async function loadSchools() {
   } catch (err) {
     if (view === "platform") $("#platform-error").textContent = err.message;
   }
+}
+const isTrainingOrganisation = () =>
+  ["vocational", "training_centre", "college"].includes(
+    activeSchool?.schoolType,
+  );
+async function loadProgrammes() {
+  if (!schoolDataLive || !isTrainingOrganisation()) return;
+  schoolProgrammes = (await schoolApi("/api/school/programmes")).programmes;
 }
 async function schoolApi(path, options = {}) {
   const response = await fetch(path, {
@@ -1328,6 +1337,9 @@ function staff() {
   );
 }
 function settings() {
+  const programmesSection = isTrainingOrganisation()
+    ? `<section class="panel"><div class="panel-heading"><div><h2>Courses and programmes</h2><p>Configure the qualifications offered by this training centre.</p></div><small>${schoolProgrammes.length} configured</small></div><form id="programme-form"><div class="form-grid"><div class="field"><label for="programme-name">Programme name</label><input id="programme-name" name="name" maxlength="100" required placeholder="e.g. Commercial Cookery"></div><div class="field"><label for="programme-duration">Duration in months</label><input id="programme-duration" name="durationMonths" type="number" min="1" max="120" required placeholder="12"></div><div class="field"><label for="programme-qualification">Certificate or qualification</label><input id="programme-qualification" name="qualification" maxlength="100" required placeholder="e.g. Level 2 Certificate"></div></div><div class="form-actions"><button class="button">Add programme</button></div><div id="programme-error" class="error" role="alert"></div></form>${table(["Programme", "Duration", "Qualification", "Status", "Action"], schoolProgrammes.map((programme) => `<tr><td>${esc(programme.name)}</td><td>${programme.duration_months} months</td><td>${esc(programme.qualification)}</td><td><span class="badge">${esc(programme.status)}</span></td><td><button class="text-button remove-programme" data-id="${esc(programme.id)}" data-name="${esc(programme.name)}">Remove</button></td></tr>`).join(""))}</section>`
+    : "";
   return (
     heading(
       "School settings",
@@ -1351,7 +1363,7 @@ function settings() {
           return `<tr><td>${esc(name)}</td><td>${count}</td><td><button class="text-button remove-fee-type" data-name="${esc(name)}" ${count || state.settings.feeTypes.length === 1 ? "disabled" : ""}>Remove</button></td></tr>`;
         })
         .join(""),
-    )}<div class="note">A fee type cannot be removed after it has been used for a charge.</div></section><section class="panel"><div class="panel-heading"><h2>School subjects</h2><small>${state.settings.subjects.length} configured</small></div><form id="subject-form" class="toolbar"><input name="subjectName" maxlength="80" required placeholder="e.g. Mathematics" aria-label="New subject name"><button class="button">Add subject</button></form><div id="subject-error" class="error" role="alert"></div>${table(["Subject", "Action"], state.settings.subjects.map((name) => `<tr><td>${esc(name)}</td><td><button class="text-button remove-subject" data-name="${esc(name)}">Remove</button></td></tr>`).join(""))}<div class="note">Subjects will be used for assessments and student report cards.</div></section><div class="note">Published results retain their original term and threshold. ${schoolDataLive ? "These settings are stored securely in Neon." : "These prototype settings are stored only in this browser."}</div></div>`
+    )}<div class="note">A fee type cannot be removed after it has been used for a charge.</div></section>${programmesSection}<section class="panel"><div class="panel-heading"><h2>School subjects</h2><small>${state.settings.subjects.length} configured</small></div><form id="subject-form" class="toolbar"><input name="subjectName" maxlength="80" required placeholder="e.g. Mathematics" aria-label="New subject name"><button class="button">Add subject</button></form><div id="subject-error" class="error" role="alert"></div>${table(["Subject", "Action"], state.settings.subjects.map((name) => `<tr><td>${esc(name)}</td><td><button class="text-button remove-subject" data-name="${esc(name)}">Remove</button></td></tr>`).join(""))}<div class="note">Subjects will be used for assessments and student report cards.</div></section><div class="note">Published results retain their original term and threshold. ${schoolDataLive ? "These settings are stored securely in Neon." : "These prototype settings are stored only in this browser."}</div></div>`
   );
 }
 function wire() {
@@ -2254,6 +2266,46 @@ function wire() {
     $("#payment-print").onclick = printPaymentReport;
   }
   if (view === "settings") {
+    if ($("#programme-form")) {
+      $("#programme-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const form = new FormData(e.target),
+          name = String(form.get("name") || "").trim(),
+          durationMonths = Number(form.get("durationMonths")),
+          qualification = String(form.get("qualification") || "").trim(),
+          button = e.target.querySelector(".button");
+        $("#programme-error").textContent = "";
+        button.disabled = true;
+        try {
+          await schoolApi("/api/school/programmes", {
+            method: "POST",
+            body: JSON.stringify({ name, durationMonths, qualification }),
+          });
+          await loadProgrammes();
+          render();
+          toast("Programme added.");
+        } catch (err) {
+          $("#programme-error").textContent = err.message;
+          button.disabled = false;
+        }
+      };
+      document.querySelectorAll(".remove-programme").forEach(
+        (button) =>
+          (button.onclick = async () => {
+            if (!confirm(`Remove ${button.dataset.name}?`)) return;
+            try {
+              await schoolApi(`/api/school/programmes/${button.dataset.id}`, {
+                method: "DELETE",
+              });
+              await loadProgrammes();
+              render();
+              toast("Programme removed.");
+            } catch (err) {
+              toast(err.message);
+            }
+          }),
+      );
+    }
     $("#settings-form").onsubmit = async (e) => {
       e.preventDefault();
       const f = new FormData(e.target),
@@ -2869,6 +2921,7 @@ async function showPortal(session) {
     if (role === "Administrator") {
       await loadSchoolStaff();
       await loadSchoolActivity();
+      await loadProgrammes();
     }
   }
   $(".demo-banner").hidden = Boolean(activeSchool);
