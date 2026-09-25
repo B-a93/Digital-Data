@@ -87,6 +87,17 @@ CREATE TABLE IF NOT EXISTS subjects (
   UNIQUE (school_id, name)
 );
 
+CREATE TABLE IF NOT EXISTS programmes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  duration_months integer NOT NULL CHECK (duration_months BETWEEN 1 AND 120),
+  qualification text NOT NULL,
+  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (school_id, name)
+);
+
 CREATE TABLE IF NOT EXISTS timetable_entries (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
