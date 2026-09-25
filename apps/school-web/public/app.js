@@ -287,12 +287,23 @@ function render() {
   wire();
 }
 function platform() {
+  const organisationTypes = [
+    ["public", "Public school"],
+    ["private", "Private school"],
+    ["mission", "Mission school"],
+    ["community", "Community school"],
+    ["vocational", "Vocational school"],
+    ["training_centre", "Skills-training centre"],
+    ["college", "College or specialised institute"],
+  ];
+  const typeLabel = (value) =>
+    organisationTypes.find(([key]) => key === value)?.[1] || value;
   return (
     heading(
-      "School onboarding",
-      "Create and monitor protected school workspaces.",
+      "School and training-centre onboarding",
+      "Create and monitor protected education workspaces.",
     ) +
-    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>Create a school workspace</h2><span class="badge gray">Platform Owner</span></div><form id="school-onboarding-form"><div class="form-grid"><div class="field"><label>School name</label><input name="name" maxlength="100" required></div><div class="field"><label>School code</label><input name="slug" maxlength="60" pattern="[-a-z0-9]{3,60}" placeholder="e.g. brikama-primary" required></div><div class="field"><label>School type</label><select name="schoolType"><option value="public">Public</option><option value="private">Private</option><option value="mission">Mission</option><option value="community">Community</option></select></div><div class="field"><label>Region</label><input name="region" maxlength="80"></div><div class="field"><label>District</label><input name="district" maxlength="80"></div><div class="field"><label>Administrator name</label><input name="administratorName" maxlength="100" required></div><div class="field"><label>Administrator email</label><input name="administratorEmail" type="email" required></div></div><div class="form-actions"><button class="button">Create school and send invitation</button></div><div id="platform-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>School workspaces</h2><button id="refresh-schools" class="text-button">Refresh</button></div>${table(["School", "Type", "Administrator", "Status", "Action"], platformSchools.map((s) => `<tr><td>${esc(s.name)}<span class="sub">${esc(s.slug)}</span></td><td>${esc(s.school_type)}</td><td>${esc(s.administrator_name || "—")}<span class="sub">${esc(s.administrator_email || "")}</span></td><td><span class="badge ${s.status === "active" ? "" : "amber"}">${esc(s.status)}</span><span class="sub">Invitation: ${esc(s.invitation_status || "not sent")}</span></td><td>${s.status === "active" ? "—" : `<button class="text-button resend-invitation" data-id="${esc(s.id)}">Resend invitation</button>`}</td></tr>`).join(""))}</section></div>`
+    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>Create an education workspace</h2><span class="badge gray">Platform Owner</span></div><form id="school-onboarding-form"><div class="form-grid"><div class="field"><label>Organisation name</label><input name="name" maxlength="100" required></div><div class="field"><label>Organisation code</label><input name="slug" maxlength="60" pattern="[-a-z0-9]{3,60}" placeholder="e.g. brikama-skills-centre" required></div><div class="field"><label>Organisation type</label><select name="schoolType">${organisationTypes.map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></div><div class="field"><label>Region</label><input name="region" maxlength="80"></div><div class="field"><label>District</label><input name="district" maxlength="80"></div><div class="field"><label>Administrator name</label><input name="administratorName" maxlength="100" required></div><div class="field"><label>Administrator email</label><input name="administratorEmail" type="email" required></div></div><div class="form-actions"><button class="button">Create workspace and send invitation</button></div><div id="platform-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Education workspaces</h2><button id="refresh-schools" class="text-button">Refresh</button></div>${table(["Organisation", "Type", "Administrator", "Status", "Action"], platformSchools.map((s) => `<tr><td>${esc(s.name)}<span class="sub">${esc(s.slug)}</span></td><td>${esc(typeLabel(s.school_type))}</td><td>${esc(s.administrator_name || "—")}<span class="sub">${esc(s.administrator_email || "")}</span></td><td><span class="badge ${s.status === "active" ? "" : "amber"}">${esc(s.status)}</span><span class="sub">Invitation: ${esc(s.invitation_status || "not sent")}</span></td><td>${s.status === "active" ? "—" : `<button class="text-button resend-invitation" data-id="${esc(s.id)}">Resend invitation</button>`}</td></tr>`).join(""))}</section></div>`
   );
 }
 async function platformApi(path, options = {}) {
