@@ -213,7 +213,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const membership = await query(
-        `SELECT su.role,s.id,s.name,s.slug,s.current_term,s.pass_mark,s.grade_scale,s.status
+        `SELECT su.role,s.id,s.name,s.slug,s.current_term,s.pass_mark,s.grade_scale,s.school_type,s.status
          FROM school_users su JOIN schools s ON s.id=su.school_id
          WHERE su.auth_user_id=$1 AND s.status='active'
          ORDER BY su.created_at LIMIT 1`,
@@ -235,6 +235,7 @@ const server = http.createServer(async (req, res) => {
           term: row.current_term,
           passMark: Number(row.pass_mark),
           gradeScale: row.grade_scale,
+          schoolType: row.school_type,
           status: row.status,
         },
       });
@@ -266,6 +267,7 @@ const server = http.createServer(async (req, res) => {
         school,
         classes,
         subjects,
+        programmes,
         students,
         attendance,
         feeTypes,
@@ -289,6 +291,10 @@ const server = http.createServer(async (req, res) => {
         ),
         query(
           `SELECT id,name,created_at FROM subjects WHERE school_id=$1 ORDER BY name`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT id,name,duration_months,qualification,status,created_at FROM programmes WHERE school_id=$1 ORDER BY name`,
           [context.school_id],
         ),
         query(
@@ -349,6 +355,7 @@ const server = http.createServer(async (req, res) => {
         school: school.rows[0],
         classes: classes.rows,
         subjects: subjects.rows,
+        programmes: programmes.rows,
         students: students.rows,
         attendance: attendance.rows,
         feeTypes: feeTypes.rows,
@@ -842,6 +849,85 @@ const server = http.createServer(async (req, res) => {
       await recordAudit(context, "subject.removed", "subject", subject.id, {
         name: subject.name,
       });
+      json(res, 200, { status: "deleted" });
+      return;
+    }
+    if (pathname === "/api/school/programmes") {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method === "GET") {
+        const result = await query(
+          `SELECT id,name,duration_months,qualification,status
+           FROM programmes WHERE school_id=$1 ORDER BY name`,
+          [context.school_id],
+        );
+        json(res, 200, { programmes: result.rows });
+        return;
+      }
+      if (req.method === "POST") {
+        const data = await readJsonBody(req),
+          name = String(data.name || "").trim(),
+          qualification = String(data.qualification || "").trim(),
+          durationMonths = Number(data.durationMonths);
+        if (
+          !name ||
+          name.length > 100 ||
+          !qualification ||
+          qualification.length > 100 ||
+          !Number.isInteger(durationMonths) ||
+          durationMonths < 1 ||
+          durationMonths > 120
+        ) {
+          json(res, 400, { error: "Enter valid programme details." });
+          return;
+        }
+        const programme = (
+          await query(
+            `INSERT INTO programmes(school_id,name,duration_months,qualification)
+             VALUES($1,$2,$3,$4) RETURNING id,name,duration_months,qualification,status`,
+            [context.school_id, name, durationMonths, qualification],
+          )
+        ).rows[0];
+        await recordAudit(
+          context,
+          "programme.created",
+          "programme",
+          programme.id,
+          { name, durationMonths, qualification },
+        );
+        json(res, 201, { programme });
+        return;
+      }
+      json(res, 405, { error: "Method not allowed" });
+      return;
+    }
+    const programmeRoute = pathname.match(
+      /^\/api\/school\/programmes\/([0-9a-f-]{36})$/,
+    );
+    if (programmeRoute) {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method !== "DELETE") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const programme = (
+        await query(
+          `DELETE FROM programmes WHERE id=$1 AND school_id=$2 RETURNING id,name`,
+          [programmeRoute[1], context.school_id],
+        )
+      ).rows[0];
+      if (!programme) {
+        json(res, 404, { error: "Programme not found." });
+        return;
+      }
+      await recordAudit(
+        context,
+        "programme.removed",
+        "programme",
+        programme.id,
+        { name: programme.name },
+      );
       json(res, 200, { status: "deleted" });
       return;
     }
