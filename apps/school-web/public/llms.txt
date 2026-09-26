@@ -1,0 +1,34 @@
+# School Management Portal
+
+> A secure, multi-school management system created by Elegant Empire AI for schools, vocational institutions, skills-training centres and specialised colleges in The Gambia.
+
+Canonical website: https://school.elegantempireai.com/
+Public product information: https://school.elegantempireai.com/product
+Provider: Elegant Empire AI
+Provider website: https://elegantempireai.com/
+Primary market: The Gambia
+
+## What the platform manages
+
+- Student registration and unique student numbers
+- Classes, subjects, attendance and timetables
+- Fees, charges, payments, balances and printable receipts
+- Results, grading, teacher remarks and report cards
+- Staff invitations and role-based access
+- Parent and guardian WhatsApp communication
+- Excel exports, printable PDF reports and secure school backups
+- Courses, programmes and qualifications for skills-training centres
+
+## Organisation types
+
+- Public, private, mission and community schools
+- Vocational schools and skills-training centres
+- Colleges and specialised institutes
+
+## Security and privacy
+
+Each organisation has an isolated workspace. Authentication and live school records are stored securely in Neon. Private school data and API routes are not public or intended for search indexing.
+
+## Access
+
+Accounts are created through controlled school onboarding. There is no unrestricted public registration. Contact Elegant Empire AI for onboarding and product enquiries.
