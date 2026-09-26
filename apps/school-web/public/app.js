@@ -308,15 +308,27 @@ function platform() {
   );
 }
 async function platformApi(path, options = {}) {
-  const response = await fetch(path, {
+  accessToken = await authenticatedToken();
+  let response = await fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + accessToken,
+      ...options.headers,
+    },
+  });
+  if (response.status === 401) {
+    accessToken = await authenticatedToken(true);
+    response = await fetch(path, {
       ...options,
       headers: {
         "Content-Type": "application/json",
         Authorization: "Bearer " + accessToken,
         ...options.headers,
       },
-    }),
-    data = await response.json();
+    });
+  }
+  const data = await response.json();
   if (!response.ok) throw Error(data.error || "Request failed");
   return data;
 }
@@ -337,15 +349,27 @@ async function loadProgrammes() {
   schoolProgrammes = (await schoolApi("/api/school/programmes")).programmes;
 }
 async function schoolApi(path, options = {}) {
-  const response = await fetch(path, {
+  accessToken = await authenticatedToken();
+  let response = await fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + accessToken,
+      ...options.headers,
+    },
+  });
+  if (response.status === 401) {
+    accessToken = await authenticatedToken(true);
+    response = await fetch(path, {
       ...options,
       headers: {
         "Content-Type": "application/json",
         Authorization: "Bearer " + accessToken,
         ...options.headers,
       },
-    }),
-    data = await response.json();
+    });
+  }
+  const data = await response.json();
   if (!response.ok) throw Error(data.error || "Request failed");
   return data;
 }
@@ -2845,23 +2869,33 @@ async function resolvedSession(authResult) {
   if (direct) return direct;
   return sessionFromResult(await auth.getSession());
 }
-async function authenticatedToken() {
-  const response = await fetch("/api/auth/token", {
-      headers: { Accept: "application/json" },
-      credentials: "same-origin",
-    }),
-    data = await response.json().catch(() => ({}));
-  if (!response.ok)
-    throw Error(
-      data.message ||
-        data.error ||
-        `Secure token request failed (${response.status}).`,
-    );
-  const token = data.token;
+function tokenNeedsRefresh(token) {
+  try {
+    const encoded = token
+        .split(".")[1]
+        .replaceAll("-", "+")
+        .replaceAll("_", "/"),
+      payload = JSON.parse(
+        atob(encoded.padEnd(Math.ceil(encoded.length / 4) * 4, "=")),
+      );
+    return !payload.exp || payload.exp * 1000 <= Date.now() + 60_000;
+  } catch {
+    return true;
+  }
+}
+async function authenticatedToken(forceRefresh = false) {
+  if (!forceRefresh && accessToken && !tokenNeedsRefresh(accessToken))
+    return accessToken;
+  await auth.getSession({
+    query: { disableCookieCache: "true" },
+  });
+  const token = await auth.getJWTToken();
   if (!token || token.split(".").length !== 3)
     throw Error(
       "The secure login token could not be created. Please sign in again.",
     );
+  if (tokenNeedsRefresh(token))
+    throw Error("Your session has expired. Please sign in again.");
   return token;
 }
 function showAuthPanel(id) {
@@ -2880,7 +2914,7 @@ async function showPortal(session) {
   const authScreen = $("#auth-screen"),
     layout = $(".layout"),
     email = session?.user?.email || "";
-  accessToken = await authenticatedToken();
+  accessToken = await authenticatedToken(true);
   const response = await fetch("/api/me", {
     headers: { Authorization: "Bearer " + accessToken },
   });
