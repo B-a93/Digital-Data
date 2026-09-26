@@ -2886,10 +2886,22 @@ function tokenNeedsRefresh(token) {
 async function authenticatedToken(forceRefresh = false) {
   if (!forceRefresh && accessToken && !tokenNeedsRefresh(accessToken))
     return accessToken;
-  await auth.getSession({
-    query: { disableCookieCache: "true" },
-  });
-  const token = await auth.getJWTToken();
+  const response = await fetch(
+      `/api/auth/token${forceRefresh ? `?refresh=${Date.now()}` : ""}`,
+      {
+        headers: { Accept: "application/json" },
+        credentials: "same-origin",
+        cache: "no-store",
+      },
+    ),
+    data = await response.json().catch(() => ({}));
+  if (!response.ok)
+    throw Error(
+      data.message ||
+        data.error ||
+        `Secure token request failed (${response.status}).`,
+    );
+  const token = data.token;
   if (!token || token.split(".").length !== 3)
     throw Error(
       "The secure login token could not be created. Please sign in again.",
