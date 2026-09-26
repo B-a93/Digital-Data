@@ -2116,9 +2116,10 @@ const server = http.createServer(async (req, res) => {
       json(res, 405, { error: "Method not allowed" });
       return;
     }
+    const publicPath = pathname === "/product" ? "/product.html" : pathname;
     const target = path.resolve(
       root,
-      "." + (pathname === "/" ? "/index.html" : pathname),
+      "." + (publicPath === "/" ? "/index.html" : publicPath),
     );
     if (!target.startsWith(root + path.sep)) {
       res.writeHead(403);
