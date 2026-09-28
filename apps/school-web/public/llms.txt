@@ -8,6 +8,10 @@ Provider: Elegant Empire AI
 Provider website: https://elegantempireai.com/
 Primary market: The Gambia
 
+## Founding-schools offer
+
+The first 10 eligible schools receive three months of full portal access free with guided onboarding. There is no automatic charge at the end of the trial. Schools may choose a paid plan or stop using the service. Availability and eligibility are confirmed during onboarding.
+
 ## What the platform manages
 
 - Student registration and unique student numbers
