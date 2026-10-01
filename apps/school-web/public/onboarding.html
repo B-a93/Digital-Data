@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#146a56" />
+    <meta
+      name="description"
+      content="Request onboarding for the School Management Portal by Elegant Empire AI. The first 10 eligible Gambian schools receive three months free."
+    />
+    <meta name="robots" content="index, follow" />
+    <title>Request School Portal Onboarding | Elegant Empire AI</title>
+    <link
+      rel="canonical"
+      href="https://school.elegantempireai.com/onboarding"
+    />
+    <link rel="icon" href="/app-icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body class="product-page">
+    <header class="product-header">
+      <a class="brand" href="/product"
+        ><span class="brand-icon">S</span
+        ><span
+          >School Management Portal<small>BY ELEGANT EMPIRE AI</small></span
+        ></a
+      >
+      <a class="button secondary" href="/product">Back to product page</a>
+    </header>
+    <main class="onboarding-main">
+      <section class="onboarding-intro">
+        <span class="eyebrow">SCHOOL AND TRAINING-CENTRE ONBOARDING</span>
+        <h1>Tell us about your institution.</h1>
+        <p>
+          Submit this short request and Elegant Empire AI will contact you to
+          confirm your needs, trial eligibility and onboarding arrangements.
+        </p>
+        <div class="onboarding-note">
+          <strong>Founding-schools offer</strong>
+          <span
+            >The first 10 eligible schools receive three months of full portal
+            access free. There is no automatic charge.</span
+          >
+        </div>
+      </section>
+      <section class="onboarding-card" aria-labelledby="request-title">
+        <h2 id="request-title">Request onboarding</h2>
+        <form id="onboarding-request-form">
+          <div class="form-grid">
+            <div class="field">
+              <label for="organisation-name">School or institution name</label>
+              <input
+                id="organisation-name"
+                name="organisationName"
+                maxlength="120"
+                required
+              />
+            </div>
+            <div class="field">
+              <label for="organisation-type">Institution type</label>
+              <select id="organisation-type" name="organisationType" required>
+                <option value="">Choose a type</option>
+                <option>Public school</option>
+                <option>Private school</option>
+                <option>Mission school</option>
+                <option>Community school</option>
+                <option>Vocational school</option>
+                <option>Skills-training centre</option>
+                <option>College or specialised institute</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="region">Region or town</label>
+              <input id="region" name="region" maxlength="120" />
+            </div>
+            <div class="field">
+              <label for="student-count">Estimated number of learners</label>
+              <input
+                id="student-count"
+                name="studentCount"
+                type="number"
+                min="1"
+                max="100000"
+                inputmode="numeric"
+              />
+            </div>
+            <div class="field">
+              <label for="contact-name">Contact person’s name</label>
+              <input
+                id="contact-name"
+                name="contactName"
+                maxlength="120"
+                autocomplete="name"
+                required
+              />
+            </div>
+            <div class="field">
+              <label for="contact-email">Email address</label>
+              <input
+                id="contact-email"
+                name="email"
+                type="email"
+                maxlength="200"
+                autocomplete="email"
+                required
+              />
+            </div>
+            <div class="field">
+              <label for="contact-phone">Phone or WhatsApp number</label>
+              <input
+                id="contact-phone"
+                name="phone"
+                type="tel"
+                maxlength="40"
+                autocomplete="tel"
+              />
+            </div>
+            <div class="field">
+              <label for="preferred-contact">Preferred contact method</label>
+              <select id="preferred-contact" name="preferredContact">
+                <option>Email</option>
+                <option>WhatsApp</option>
+                <option>Phone</option>
+              </select>
+            </div>
+          </div>
+          <div class="field onboarding-message">
+            <label for="request-message"
+              >What would you like the system to help you manage?</label
+            >
+            <textarea
+              id="request-message"
+              name="message"
+              rows="5"
+              maxlength="1200"
+              placeholder="For example: student records, attendance, fees, results or staff access."
+            ></textarea>
+          </div>
+          <label class="trial-check">
+            <input name="trialRequested" type="checkbox" checked />
+            I would like to be considered for the three-month free trial.
+          </label>
+          <div class="honeypot" aria-hidden="true">
+            <label for="website">Website</label>
+            <input
+              id="website"
+              name="website"
+              tabindex="-1"
+              autocomplete="off"
+            />
+          </div>
+          <div class="form-actions">
+            <button class="button" type="submit">
+              Send onboarding request
+            </button>
+            <span class="status-text"
+              >We will review your request and contact you.</span
+            >
+          </div>
+          <div id="onboarding-error" class="error" role="alert"></div>
+          <div
+            id="onboarding-success"
+            class="onboarding-success"
+            role="status"
+            hidden
+          ></div>
+        </form>
+      </section>
+    </main>
+    <footer class="product-footer">
+      <span>School Management Portal by Elegant Empire AI</span>
+      <a href="/">Secure sign in</a>
+    </footer>
+    <script type="module" src="/onboarding.js"></script>
+  </body>
+</html>
