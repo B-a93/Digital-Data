@@ -861,6 +861,93 @@ a:focus-visible {
   color: #fff;
   text-decoration: underline;
 }
+.onboarding-main {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(520px, 1.2fr);
+  gap: 55px;
+  max-width: 1180px;
+  min-height: calc(100vh - 160px);
+  padding: 70px 24px;
+  align-items: start;
+}
+.onboarding-intro {
+  position: sticky;
+  top: 130px;
+}
+.onboarding-intro h1 {
+  margin: 14px 0 20px;
+  font-size: clamp(36px, 5vw, 58px);
+  line-height: 1.04;
+}
+.onboarding-intro > p {
+  font-size: 16px;
+}
+.onboarding-note {
+  display: grid;
+  gap: 8px;
+  margin-top: 30px;
+  padding: 20px;
+  background: #eaf4ef;
+  border-radius: 12px;
+}
+.onboarding-note span {
+  color: #587064;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.onboarding-card {
+  padding: 30px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 22px 60px rgba(23, 61, 51, 0.08);
+}
+.onboarding-card h2 {
+  margin: 0 0 26px;
+  font-size: 24px;
+}
+.onboarding-message {
+  margin-top: 20px;
+}
+.onboarding-card textarea {
+  width: 100%;
+  padding: 12px;
+  color: #304b40;
+  background: #fff;
+  border: 1px solid #ccd8d1;
+  border-radius: 6px;
+  resize: vertical;
+  font: inherit;
+  font-size: 12px;
+}
+.trial-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 18px;
+  line-height: 1.5;
+}
+.trial-check input {
+  width: auto;
+  min-height: auto;
+  margin-top: 2px;
+}
+.honeypot {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+.onboarding-success {
+  margin-top: 18px;
+  padding: 14px;
+  color: #245d48;
+  background: #eaf4ef;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
 @media (max-width: 800px) {
   .product-header {
     padding: 14px 18px;
@@ -890,5 +977,16 @@ a:focus-visible {
   }
   .product-section {
     padding: 45px 0;
+  }
+  .onboarding-main {
+    grid-template-columns: 1fr;
+    gap: 30px;
+    padding: 45px 18px;
+  }
+  .onboarding-intro {
+    position: static;
+  }
+  .onboarding-card {
+    padding: 22px;
   }
 }
