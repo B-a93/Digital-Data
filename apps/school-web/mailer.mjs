@@ -57,6 +57,54 @@ export async function sendStaffInvitation({
   });
 }
 
+export async function sendOnboardingRequest(request) {
+  const transporter = nodemailer.createTransport(config());
+  const from = process.env.SMTP_FROM?.trim() || process.env.SMTP_USER?.trim();
+  const to = process.env.ONBOARDING_EMAIL?.trim() || from;
+  const lines = [
+    `Organisation: ${request.organisationName}`,
+    `Type: ${request.organisationType}`,
+    `Region: ${request.region || "Not provided"}`,
+    `Contact: ${request.contactName}`,
+    `Email: ${request.email}`,
+    `Phone / WhatsApp: ${request.phone || "Not provided"}`,
+    `Estimated learners: ${request.studentCount || "Not provided"}`,
+    `Preferred contact: ${request.preferredContact}`,
+    `Three-month trial: ${request.trialRequested ? "Requested" : "Not requested"}`,
+    "",
+    "Additional information:",
+    request.message || "None provided",
+  ];
+  await transporter.sendMail({
+    from,
+    to,
+    replyTo: request.email,
+    subject: `School portal onboarding request · ${request.organisationName}`,
+    text: lines.join("\n"),
+    html: `<h2>School portal onboarding request</h2><dl>${[
+      ["Organisation", request.organisationName],
+      ["Type", request.organisationType],
+      ["Region", request.region || "Not provided"],
+      ["Contact", request.contactName],
+      ["Email", request.email],
+      ["Phone / WhatsApp", request.phone || "Not provided"],
+      ["Estimated learners", request.studentCount || "Not provided"],
+      ["Preferred contact", request.preferredContact],
+      [
+        "Three-month trial",
+        request.trialRequested ? "Requested" : "Not requested",
+      ],
+    ]
+      .map(
+        ([label, value]) =>
+          `<dt><strong>${escapeHtml(label)}</strong></dt><dd>${escapeHtml(value)}</dd>`,
+      )
+      .join(
+        "",
+      )}</dl><h3>Additional information</h3><p>${escapeHtml(request.message || "None provided")}</p>`,
+  });
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
