@@ -13,7 +13,11 @@ import {
   requirePlatformOwner,
   verifyAuthenticatedUser,
 } from "./auth-server.mjs";
-import { sendSchoolInvitation, sendStaffInvitation } from "./mailer.mjs";
+import {
+  sendOnboardingRequest,
+  sendSchoolInvitation,
+  sendStaffInvitation,
+} from "./mailer.mjs";
 const root = path.resolve(fileURLToPath(new URL("./public/", import.meta.url)));
 const neonAuthUrl =
   "https://ep-spring-poetry-b2x3am6k.neonauth.c-6.eu-central-1.aws.neon.tech/neondb/auth";
@@ -34,6 +38,7 @@ const json = (res, status, data) => {
   });
   res.end(JSON.stringify(data));
 };
+const onboardingAttempts = new Map();
 async function readJsonBody(req) {
   let value = "";
   for await (const chunk of req) {
@@ -194,6 +199,71 @@ const server = http.createServer(async (req, res) => {
         "X-Content-Type-Options": "nosniff",
       });
       res.end(body);
+      return;
+    }
+    if (pathname === "/api/onboarding-requests") {
+      if (req.method !== "POST") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const ip = String(
+          req.headers["x-forwarded-for"] || req.socket.remoteAddress,
+        )
+          .split(",")[0]
+          .trim(),
+        now = Date.now(),
+        recent = (onboardingAttempts.get(ip) || []).filter(
+          (time) => now - time < 60 * 60 * 1000,
+        );
+      if (recent.length >= 5) {
+        json(res, 429, {
+          error: "Too many requests. Please try again later.",
+        });
+        return;
+      }
+      const data = await readJsonBody(req);
+      if (String(data.website || "").trim()) {
+        json(res, 200, { status: "received" });
+        return;
+      }
+      const request = {
+        organisationName: String(data.organisationName || "").trim(),
+        organisationType: String(data.organisationType || "").trim(),
+        region: String(data.region || "").trim(),
+        contactName: String(data.contactName || "").trim(),
+        email: String(data.email || "")
+          .trim()
+          .toLowerCase(),
+        phone: String(data.phone || "").trim(),
+        studentCount: String(data.studentCount || "").trim(),
+        preferredContact: String(data.preferredContact || "Email").trim(),
+        trialRequested: Boolean(data.trialRequested),
+        message: String(data.message || "").trim(),
+      };
+      if (
+        !request.organisationName ||
+        !request.contactName ||
+        !/^\S+@\S+\.\S+$/.test(request.email) ||
+        ![
+          "Public school",
+          "Private school",
+          "Mission school",
+          "Community school",
+          "Vocational school",
+          "Skills-training centre",
+          "College or specialised institute",
+        ].includes(request.organisationType) ||
+        !["Email", "Phone", "WhatsApp"].includes(request.preferredContact) ||
+        Object.values(request).some(
+          (value) => typeof value === "string" && value.length > 1200,
+        )
+      ) {
+        json(res, 400, { error: "Enter valid onboarding details." });
+        return;
+      }
+      await sendOnboardingRequest(request);
+      onboardingAttempts.set(ip, [...recent, now]);
+      json(res, 201, { status: "received" });
       return;
     }
     if (pathname === "/api/me") {
@@ -2116,7 +2186,12 @@ const server = http.createServer(async (req, res) => {
       json(res, 405, { error: "Method not allowed" });
       return;
     }
-    const publicPath = pathname === "/product" ? "/product.html" : pathname;
+    const publicPath =
+      pathname === "/product"
+        ? "/product.html"
+        : pathname === "/onboarding"
+          ? "/onboarding.html"
+          : pathname;
     const target = path.resolve(
       root,
       "." + (publicPath === "/" ? "/index.html" : publicPath),
