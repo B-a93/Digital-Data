@@ -148,6 +148,33 @@ CREATE TABLE IF NOT EXISTS students (
 
 ALTER TABLE students ADD COLUMN IF NOT EXISTS guardian_name text;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS guardian_phone text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS date_of_birth date;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS gender text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS address text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS previous_school text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS admission_date date;
+
+CREATE TABLE IF NOT EXISTS student_admission_applications (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  full_name text NOT NULL,
+  date_of_birth date,
+  gender text,
+  address text,
+  guardian_name text NOT NULL,
+  guardian_phone text NOT NULL,
+  guardian_email text,
+  previous_school text,
+  preferred_class text,
+  notes text,
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  reviewed_by text,
+  reviewed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS admission_applications_school_status_idx
+  ON student_admission_applications(school_id,status,created_at DESC);
 
 CREATE TABLE IF NOT EXISTS attendance (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

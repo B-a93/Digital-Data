@@ -39,8 +39,24 @@ test('self-onboarding creates an invited workspace and starts trials only after 
  assert.match(server,/status,onboarding_mode,trial_requested/);
  assert.match(server,/pg_advisory_xact_lock\(20261002\)/);
  assert.match(server,/trialCount < 10/);
- assert.match(server,/now\(\) \+ interval '3 months'/);
+ assert.match(server,/trial_ends_at=CASE WHEN \$2 THEN now\(\) \+ interval '2 months'/);
  assert.match(schema,/trial_ends_at timestamptz/);
+});
+test('student admissions remain pending until a school administrator approves them',async()=>{
+ const [server,schema,admissions,product]=await Promise.all([
+  readFile('apps/school-web/server.mjs','utf8'),
+  readFile('apps/school-web/database/schema.sql','utf8'),
+  readFile('apps/school-web/public/admissions.html','utf8'),
+  readFile('apps/school-web/public/product.html','utf8'),
+ ]);
+ assert.match(schema,/CREATE TABLE IF NOT EXISTS student_admission_applications/);
+ assert.match(server,/pathname === "\/api\/admissions"/);
+ assert.match(server,/status='pending' FOR UPDATE/);
+ assert.match(server,/student_admission_applications/);
+ assert.match(admissions,/Student registration application/);
+ assert.match(product,/D1,500/);
+ assert.match(product,/D3,000/);
+ assert.match(product,/D5,000/);
 });
 test('onboarding displays a clear validation error instead of silently stopping',async()=>{
  const [html,script]=await Promise.all([

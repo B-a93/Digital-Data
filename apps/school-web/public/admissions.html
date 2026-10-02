@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#146a56" />
+    <meta name="description" content="Submit a student admission application to a participating school." />
+    <meta name="robots" content="index, follow" />
+    <title>Student Admission Application | School Management Portal</title>
+    <link rel="canonical" href="https://school.elegantempireai.com/admissions" />
+    <link rel="icon" href="/app-icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body class="product-page">
+    <header class="product-header">
+      <a class="brand" href="/product"><span class="brand-icon">S</span><span>School Management Portal<small>BY ELEGANT EMPIRE AI</small></span></a>
+      <a class="button secondary" href="/product">Back to product page</a>
+    </header>
+    <main class="onboarding-main">
+      <section class="onboarding-intro">
+        <span class="eyebrow">STUDENT ADMISSIONS</span>
+        <h1>Apply to a participating school.</h1>
+        <p>Enter the school code supplied by the school. Submitting this form does not guarantee admission; the school must review and approve it.</p>
+        <div class="onboarding-note"><strong>Before you begin</strong><span>Have the learner’s details and a parent or guardian’s contact information ready. Contact the school if you do not know its code.</span></div>
+      </section>
+      <section class="onboarding-card" aria-labelledby="admission-title">
+        <h2 id="admission-title">Student registration application</h2>
+        <form id="admission-form" novalidate>
+          <div class="form-grid">
+            <div class="field"><label for="school-code">School code *</label><input id="school-code" name="schoolCode" pattern="[a-z0-9-]{3,60}" maxlength="60" required placeholder="e.g. example-school" /></div>
+            <div class="field"><label for="full-name">Student full name *</label><input id="full-name" name="fullName" maxlength="120" required autocomplete="name" /></div>
+            <div class="field"><label for="date-of-birth">Date of birth</label><input id="date-of-birth" name="dateOfBirth" type="date" /></div>
+            <div class="field"><label for="gender">Gender</label><select id="gender" name="gender"><option value="">Prefer not to say</option><option>Female</option><option>Male</option><option>Other</option></select></div>
+            <div class="field"><label for="preferred-class">Preferred class or programme</label><input id="preferred-class" name="preferredClass" maxlength="200" /></div>
+            <div class="field"><label for="previous-school">Previous school</label><input id="previous-school" name="previousSchool" maxlength="200" /></div>
+            <div class="field"><label for="guardian-name">Parent or guardian name *</label><input id="guardian-name" name="guardianName" maxlength="120" required /></div>
+            <div class="field"><label for="guardian-phone">Parent or guardian phone *</label><input id="guardian-phone" name="guardianPhone" type="tel" maxlength="40" required /></div>
+            <div class="field"><label for="guardian-email">Parent or guardian email</label><input id="guardian-email" name="guardianEmail" type="email" maxlength="200" /></div>
+            <div class="field"><label for="address">Home address</label><input id="address" name="address" maxlength="200" /></div>
+          </div>
+          <div class="field"><label for="notes">Additional information</label><textarea id="notes" name="notes" rows="4" maxlength="1000"></textarea></div>
+          <div class="form-actions"><button class="button" type="submit">Submit application</button></div>
+          <div id="admission-message" class="onboarding-message" role="status" aria-live="polite"></div>
+        </form>
+      </section>
+    </main>
+    <script type="module" src="/admissions.js"></script>
+  </body>
+</html>

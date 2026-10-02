@@ -83,7 +83,8 @@ let view = "dashboard",
   platformSchools = [],
   schoolStaff = [],
   schoolActivity = [],
-  schoolProgrammes = [];
+  schoolProgrammes = [],
+  admissionApplications = [];
 let resultTerms = [state.settings.term];
 let timetableEntries = [];
 let attendanceDraft = null;
@@ -151,6 +152,7 @@ function save() {
 const navItems = [
   ["dashboard", "◫", "Overview"],
   ["students", "♙", "Students"],
+  ["admissions", "◇", "Admissions"],
   ["attendance", "✓", "Attendance"],
   ["fees", "◈", "Fees & payments"],
   ["results", "▤", "Results"],
@@ -274,6 +276,7 @@ function render() {
   $("#content").innerHTML = {
     dashboard,
     students,
+    admissions,
     attendance,
     fees,
     results,
@@ -406,6 +409,11 @@ async function loadSchoolStudents() {
     class: student.class_name || "Unassigned",
     guardianName: student.guardian_name || "",
     guardianPhone: student.guardian_phone || "",
+    dateOfBirth: student.date_of_birth?.slice(0, 10) || "",
+    gender: student.gender || "",
+    address: student.address || "",
+    previousSchool: student.previous_school || "",
+    admissionDate: student.admission_date?.slice(0, 10) || "",
     status: student.status || "active",
   }));
   state.attendance = {};
@@ -421,6 +429,10 @@ async function loadSchoolStudents() {
   if (!schoolClasses().includes(timetableClass))
     timetableClass = schoolClasses()[0];
   schoolDataLive = true;
+}
+async function loadAdmissions() {
+  const data = await schoolApi("/api/school/admissions");
+  admissionApplications = data.applications || [];
 }
 async function loadSchoolFinance() {
   const data = await schoolApi("/api/school/finance");
@@ -780,6 +792,17 @@ function students() {
       '<button class="button secondary" id="print-id-cards">Print student ID cards</button>',
     ) +
     `<div class="stack"><section class="panel"><div class="panel-heading"><h2>${editing ? "Edit student" : schoolDataLive ? "Register a student" : "Register a fictional student"}</h2><span class="badge gray">${schoolDataLive ? "Neon record" : "Demo record"}</span></div><form id="student-form"><div class="form-grid"><div class="field"><label for="student-number">Student number</label><input id="student-number" name="studentNumber" maxlength="30" required autocomplete="off" placeholder="e.g. STU-2026-001" value="${esc(editing?.admission || "")}"></div><div class="field"><label for="name">Student full name</label><input id="name" name="name" maxlength="80" required placeholder="e.g. Awa Example" value="${esc(editing?.name || "")}"></div><div class="field"><label for="new-class">Class</label><select id="new-class" name="class">${options(schoolClasses(), editing?.class || schoolClasses()[0])}</select></div></div><div class="form-actions"><button class="button">${editing ? "Save changes" : "Add student"}</button>${editing ? '<button type="button" class="button secondary" id="cancel-edit">Cancel</button>' : ""}<span class="status-text">Each student number must be unique within this school.</span></div><div class="error" id="form-error" role="alert"></div></form></section><section class="panel" id="student-import-panel"><div class="panel-heading"><div><h2>Import students from Excel</h2><p>Download the CSV template, complete it in Excel, then upload the saved CSV file.</p></div></div><form id="student-import-form"><div class="form-grid"><div class="field"><label for="student-import-file">Completed CSV file</label><input id="student-import-file" name="file" type="file" accept=".csv,text/csv" required></div></div><div class="form-actions"><button type="button" class="button secondary" id="student-template">Download template</button><button class="button">Import students</button><span class="status-text">Maximum 1,000 students per file.</span></div><div id="student-import-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Student register</h2><small>${list.length} students</small></div><div class="toolbar"><input id="search" type="search" aria-label="Search students" value="${esc(search)}" placeholder="Search name or student number"><select id="student-class" aria-label="Filter students by class"><option value="">All classes</option>${options(schoolClasses(), studentClass)}</select><select id="student-status" aria-label="Filter students by status"><option value="">All statuses</option>${options(["active", "inactive", "graduated"], studentStatus)}</select></div>${table(["Student", "Class", "Status", "Balance", "Action"], list.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td><span class="badge ${(s.status || "active") === "active" ? "" : "gray"}">${esc(s.status || "active")}</span></td><td>${money(balance(state, s.id))}</td><td><button class="text-button edit-student" data-id="${s.id}">Edit</button> · <button class="text-button student-status-action" data-id="${s.id}" data-status="${(s.status || "active") === "active" ? "inactive" : "active"}">${(s.status || "active") === "active" ? "Deactivate" : "Reactivate"}</button>${(s.status || "active") === "active" ? ` · <button class="text-button student-status-action" data-id="${s.id}" data-status="graduated">Graduate</button>` : ""}</td></tr>`).join(""))}</section></div>`
+  );
+}
+function admissions() {
+  const pending = admissionApplications.filter((item) => item.status === "pending");
+  return (
+    heading(
+      "Student admissions",
+      "Review public applications before creating official student records.",
+      `<a class="button secondary" href="/admissions?school=${encodeURIComponent(activeSchool?.slug || "")}" target="_blank" rel="noopener">Open public application form</a>`,
+    ) +
+    `<div class="stack"><div class="note">School code: <strong>${esc(activeSchool?.slug || "")}</strong>. Share the public form link with parents and applicants.</div><section class="panel"><div class="panel-heading"><div><h2>Pending applications</h2><p>Approval requires a unique student number and class.</p></div><span class="badge amber">${pending.length} pending</span></div>${pending.length ? pending.map((item) => `<article class="admission-card"><div><h3>${esc(item.full_name)}</h3><p>${esc(item.preferred_class || "No preferred class")} · Applied ${new Date(item.created_at).toLocaleDateString("en-GB")}</p><p>Guardian: ${esc(item.guardian_name)} · ${esc(item.guardian_phone)}${item.guardian_email ? ` · ${esc(item.guardian_email)}` : ""}</p>${item.date_of_birth ? `<p>Date of birth: ${esc(String(item.date_of_birth).slice(0, 10))}</p>` : ""}${item.previous_school ? `<p>Previous school: ${esc(item.previous_school)}</p>` : ""}${item.address ? `<p>Address: ${esc(item.address)}</p>` : ""}${item.notes ? `<p>Notes: ${esc(item.notes)}</p>` : ""}</div><form class="admission-review" data-id="${esc(item.id)}"><div class="form-grid"><div class="field"><label>Student number</label><input name="studentNumber" maxlength="30" required placeholder="STU-2026-001"></div><div class="field"><label>Class</label><select name="className">${options(schoolClasses(), item.preferred_class || schoolClasses()[0])}</select></div></div><div class="form-actions"><button class="button" name="action" value="approve">Approve and register</button><button class="button secondary" name="action" value="reject">Reject</button></div><div class="error" role="alert"></div></form></article>`).join("") : '<div class="empty-state">No pending admission applications.</div>'}</section><section class="panel"><div class="panel-heading"><h2>Application history</h2><small>${admissionApplications.length} total</small></div>${table(["Student","Guardian","Status","Submitted"], admissionApplications.map((item) => `<tr><td>${esc(item.full_name)}</td><td>${esc(item.guardian_name)}<span class="sub">${esc(item.guardian_phone)}</span></td><td><span class="badge ${item.status === "pending" ? "amber" : item.status === "approved" ? "" : "gray"}">${esc(item.status)}</span></td><td>${new Date(item.created_at).toLocaleDateString("en-GB")}</td></tr>`).join(""))}</section></div>`
   );
 }
 function attendance() {
@@ -1419,6 +1442,34 @@ function wire() {
         navigate(a.dataset.nav);
       }),
   );
+  if (view === "admissions") {
+    document.querySelectorAll(".admission-review").forEach((form) => {
+      form.querySelector('button[value="reject"]').onclick = () =>
+        form.querySelectorAll("[required]").forEach((field) => (field.required = false));
+      form.onsubmit = async (event) => {
+        event.preventDefault();
+        const action = event.submitter?.value;
+        if (action === "reject" && !confirm("Reject this student application?")) return;
+        const data = new FormData(form), error = form.querySelector(".error");
+        error.textContent = "";
+        try {
+          await schoolApi(`/api/school/admissions/${form.dataset.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              action,
+              studentNumber: data.get("studentNumber"),
+              className: data.get("className"),
+            }),
+          });
+          await Promise.all([loadAdmissions(), loadSchoolStudents()]);
+          render();
+          toast(action === "approve" ? "Application approved and student registered." : "Application rejected.");
+        } catch (err) {
+          error.textContent = err.message;
+        }
+      };
+    });
+  }
   if (view === "dashboard") {
     const charges = state.charges.reduce((s, c) => s + c.amount, 0),
       paid = state.payments.reduce((s, p) => s + p.amount, 0);
@@ -1588,7 +1639,7 @@ function wire() {
     };
     $("#student-form .form-grid").insertAdjacentHTML(
       "beforeend",
-      `<div class="field"><label for="guardian-name">Parent or guardian name</label><input id="guardian-name" name="guardianName" maxlength="100" value="${esc(state.students.find((student) => student.id === editingStudentId)?.guardianName || "")}" placeholder="Optional"></div><div class="field"><label for="guardian-phone">Parent or guardian phone</label><input id="guardian-phone" name="guardianPhone" type="tel" maxlength="40" value="${esc(state.students.find((student) => student.id === editingStudentId)?.guardianPhone || "")}" placeholder="Optional"></div>`,
+      `<div class="field"><label for="date-of-birth">Date of birth</label><input id="date-of-birth" name="dateOfBirth" type="date" value="${esc(state.students.find((student) => student.id === editingStudentId)?.dateOfBirth || "")}"></div><div class="field"><label for="gender">Gender</label><select id="gender" name="gender">${options(["", "Female", "Male", "Other"], state.students.find((student) => student.id === editingStudentId)?.gender || "")}</select></div><div class="field"><label for="guardian-name">Parent or guardian name</label><input id="guardian-name" name="guardianName" maxlength="100" value="${esc(state.students.find((student) => student.id === editingStudentId)?.guardianName || "")}" placeholder="Optional"></div><div class="field"><label for="guardian-phone">Parent or guardian phone</label><input id="guardian-phone" name="guardianPhone" type="tel" maxlength="40" value="${esc(state.students.find((student) => student.id === editingStudentId)?.guardianPhone || "")}" placeholder="Optional"></div><div class="field"><label for="address">Home address</label><input id="address" name="address" maxlength="300" value="${esc(state.students.find((student) => student.id === editingStudentId)?.address || "")}"></div><div class="field"><label for="previous-school">Previous school</label><input id="previous-school" name="previousSchool" maxlength="160" value="${esc(state.students.find((student) => student.id === editingStudentId)?.previousSchool || "")}"></div><div class="field"><label for="admission-date">Admission date</label><input id="admission-date" name="admissionDate" type="date" value="${esc(state.students.find((student) => student.id === editingStudentId)?.admissionDate || "")}"></div>`,
     );
     $("#student-form").onsubmit = async (e) => {
       e.preventDefault();
@@ -1635,6 +1686,11 @@ function wire() {
                 className: f.get("class"),
                 guardianName: f.get("guardianName"),
                 guardianPhone: f.get("guardianPhone"),
+                dateOfBirth: f.get("dateOfBirth"),
+                gender: f.get("gender"),
+                address: f.get("address"),
+                previousSchool: f.get("previousSchool"),
+                admissionDate: f.get("admissionDate"),
               }),
             },
           );
@@ -3055,13 +3111,14 @@ async function showPortal(session) {
       await loadSchoolStaff();
       await loadSchoolActivity();
       await loadProgrammes();
+      await loadAdmissions();
     }
   }
   const trialActive = activeSchool?.trialStatus === "active";
   $(".demo-banner").hidden = Boolean(activeSchool) && !trialActive;
   $("#workspace-status").textContent = trialActive ? "FREE TRIAL" : "DEMO";
   $("#workspace-message").textContent = trialActive
-    ? `Your three-month free trial is active until ${new Date(activeSchool.trialEndsAt).toLocaleDateString("en-GB")}.`
+    ? `Your two-month free trial is active until ${new Date(activeSchool.trialEndsAt).toLocaleDateString("en-GB")}.`
     : "Secure login is active. This workspace contains demonstration records.";
   $("#reset").hidden = Boolean(activeSchool);
   authScreen.hidden = true;
@@ -3168,7 +3225,7 @@ async function acceptInvitation(token, session) {
   await showPortal(session);
   toast(
     data.trialGranted
-      ? "School portal activated. Your three-month free trial has started."
+      ? "School portal activated. Your two-month free trial has started."
       : "School portal activated successfully.",
   );
 }

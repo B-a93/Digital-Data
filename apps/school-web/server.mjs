@@ -377,6 +377,61 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
+    if (pathname === "/api/admissions") {
+      if (req.method !== "POST") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const data = await readJsonBody(req),
+        schoolCode = String(data.schoolCode || "").trim().toLowerCase(),
+        fullName = String(data.fullName || "").trim(),
+        guardianName = String(data.guardianName || "").trim(),
+        guardianPhone = String(data.guardianPhone || "").trim(),
+        guardianEmail = String(data.guardianEmail || "").trim().toLowerCase(),
+        dateOfBirth = String(data.dateOfBirth || "").trim(),
+        gender = String(data.gender || "").trim(),
+        address = String(data.address || "").trim(),
+        previousSchool = String(data.previousSchool || "").trim(),
+        preferredClass = String(data.preferredClass || "").trim(),
+        notes = String(data.notes || "").trim();
+      if (
+        !/^[a-z0-9-]{3,60}$/.test(schoolCode) ||
+        !fullName || fullName.length > 120 ||
+        !guardianName || guardianName.length > 120 ||
+        !guardianPhone || guardianPhone.length > 40 ||
+        (guardianEmail && !/^\S+@\S+\.\S+$/.test(guardianEmail)) ||
+        (dateOfBirth && !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) ||
+        [gender,address,previousSchool,preferredClass].some((value) => value.length > 200) ||
+        notes.length > 1000
+      ) {
+        json(res, 400, { error: "Enter valid student and guardian details." });
+        return;
+      }
+      const school = (
+        await query(`SELECT id,name FROM schools WHERE slug=$1 AND status='active'`, [schoolCode])
+      ).rows[0];
+      if (!school) {
+        json(res, 404, { error: "School code not found. Ask the school to confirm its code." });
+        return;
+      }
+      const application = (
+        await query(
+          `INSERT INTO student_admission_applications(
+             school_id,full_name,date_of_birth,gender,address,guardian_name,guardian_phone,
+             guardian_email,previous_school,preferred_class,notes)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+           RETURNING id,status,created_at`,
+          [school.id,fullName,dateOfBirth || null,gender || null,address || null,guardianName,
+           guardianPhone,guardianEmail || null,previousSchool || null,preferredClass || null,notes || null],
+        )
+      ).rows[0];
+      json(res, 201, {
+        application,
+        schoolName: school.name,
+        message: "Application submitted. The school will review it before creating a student record.",
+      });
+      return;
+    }
     if (pathname === "/api/me") {
       if (req.method !== "GET") {
         json(res, 405, { error: "Method not allowed" });
@@ -570,7 +625,9 @@ const server = http.createServer(async (req, res) => {
       if (req.method === "GET") {
         const [students, schoolClasses, subjects] = await Promise.all([
           query(
-            `SELECT st.id,st.student_number,st.full_name,st.guardian_name,st.guardian_phone,st.status,c.name AS class_name
+            `SELECT st.id,st.student_number,st.full_name,st.guardian_name,st.guardian_phone,
+                    st.date_of_birth,st.gender,st.address,st.previous_school,st.admission_date,
+                    st.status,c.name AS class_name
              FROM students st LEFT JOIN classes c ON c.id=st.class_id
              WHERE st.school_id=$1 ORDER BY st.full_name`,
             [context.school_id],
@@ -600,13 +657,21 @@ const server = http.createServer(async (req, res) => {
           fullName = String(data.fullName || "").trim(),
           className = String(data.className || "").trim(),
           guardianName = String(data.guardianName || "").trim(),
-          guardianPhone = String(data.guardianPhone || "").trim();
+          guardianPhone = String(data.guardianPhone || "").trim(),
+          dateOfBirth = String(data.dateOfBirth || "").trim(),
+          gender = String(data.gender || "").trim(),
+          address = String(data.address || "").trim(),
+          previousSchool = String(data.previousSchool || "").trim(),
+          admissionDate = String(data.admissionDate || "").trim();
         if (
           !/^[A-Z0-9][A-Z0-9\-/]{1,29}$/.test(studentNumber) ||
           !fullName ||
           !className ||
           guardianName.length > 100 ||
-          guardianPhone.length > 40
+          guardianPhone.length > 40 ||
+          (dateOfBirth && !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) ||
+          (admissionDate && !/^\d{4}-\d{2}-\d{2}$/.test(admissionDate)) ||
+          gender.length > 40 || address.length > 300 || previousSchool.length > 160
         ) {
           json(res, 400, { error: "Enter valid student details." });
           return;
@@ -621,9 +686,11 @@ const server = http.createServer(async (req, res) => {
           ).rows[0];
           return (
             await client.query(
-              `INSERT INTO students(school_id,class_id,student_number,full_name,guardian_name,guardian_phone)
-               VALUES($1,$2,$3,$4,$5,$6)
-               RETURNING id,student_number,full_name,guardian_name,guardian_phone,status`,
+              `INSERT INTO students(school_id,class_id,student_number,full_name,guardian_name,guardian_phone,
+                                    date_of_birth,gender,address,previous_school,admission_date)
+               VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+               RETURNING id,student_number,full_name,guardian_name,guardian_phone,date_of_birth,gender,address,
+                         previous_school,admission_date,status`,
               [
                 context.school_id,
                 schoolClass.id,
@@ -631,6 +698,11 @@ const server = http.createServer(async (req, res) => {
                 fullName,
                 guardianName || null,
                 guardianPhone || null,
+                dateOfBirth || null,
+                gender || null,
+                address || null,
+                previousSchool || null,
+                admissionDate || null,
               ],
             )
           ).rows[0];
@@ -641,11 +713,100 @@ const server = http.createServer(async (req, res) => {
           className,
           guardianName,
           guardianPhone,
+          dateOfBirth,
+          gender,
+          address,
+          previousSchool,
+          admissionDate,
         });
         json(res, 201, { student });
         return;
       }
       json(res, 405, { error: "Method not allowed" });
+      return;
+    }
+    if (pathname === "/api/school/admissions") {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method !== "GET") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const applications = await query(
+        `SELECT id,full_name,date_of_birth,gender,address,guardian_name,guardian_phone,
+                guardian_email,previous_school,preferred_class,notes,status,created_at,reviewed_at
+         FROM student_admission_applications WHERE school_id=$1
+         ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END,created_at DESC`,
+        [context.school_id],
+      );
+      json(res, 200, { applications: applications.rows });
+      return;
+    }
+    const admissionRoute = pathname.match(
+      /^\/api\/school\/admissions\/([0-9a-f-]{36})$/,
+    );
+    if (admissionRoute) {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method !== "PATCH") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const data = await readJsonBody(req), action = String(data.action || "").trim();
+      if (!['approve','reject'].includes(action)) {
+        json(res, 400, { error: "Choose approve or reject." });
+        return;
+      }
+      const result = await transaction(async (client) => {
+        const application = (
+          await client.query(
+            `SELECT * FROM student_admission_applications
+             WHERE id=$1 AND school_id=$2 AND status='pending' FOR UPDATE`,
+            [admissionRoute[1], context.school_id],
+          )
+        ).rows[0];
+        if (!application) return null;
+        let student = null;
+        if (action === 'approve') {
+          const studentNumber = String(data.studentNumber || '').trim().toUpperCase(),
+            className = String(data.className || '').trim();
+          if (!/^[A-Z0-9][A-Z0-9\-/]{1,29}$/.test(studentNumber) || !className)
+            throw Object.assign(Error('Assign a valid student number and class.'), { status: 400 });
+          const schoolClass = (
+            await client.query(
+              `INSERT INTO classes(school_id,name) VALUES($1,$2)
+               ON CONFLICT(school_id,name) DO UPDATE SET name=EXCLUDED.name RETURNING id`,
+              [context.school_id,className],
+            )
+          ).rows[0];
+          student = (
+            await client.query(
+              `INSERT INTO students(school_id,class_id,student_number,full_name,guardian_name,guardian_phone,
+                                    date_of_birth,gender,address,previous_school,admission_date)
+               VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,CURRENT_DATE)
+               RETURNING id,student_number,full_name`,
+              [context.school_id,schoolClass.id,studentNumber,application.full_name,application.guardian_name,
+               application.guardian_phone,application.date_of_birth,application.gender,application.address,
+               application.previous_school],
+            )
+          ).rows[0];
+        }
+        await client.query(
+          `UPDATE student_admission_applications
+           SET status=$3,reviewed_by=$4,reviewed_at=now(),updated_at=now()
+           WHERE id=$1 AND school_id=$2`,
+          [admissionRoute[1],context.school_id,action === 'approve' ? 'approved' : 'rejected',context.auth_user_id],
+        );
+        return { application, student };
+      });
+      if (!result) {
+        json(res, 404, { error: "Pending application not found." });
+        return;
+      }
+      await recordAudit(context, action === 'approve' ? 'admission.approved' : 'admission.rejected', "admission_application", admissionRoute[1], {
+        studentId: result.student?.id || null,
+      });
+      json(res, 200, { status: action === 'approve' ? 'approved' : 'rejected', student: result.student });
       return;
     }
     if (pathname === "/api/school/students/promote") {
@@ -1452,13 +1613,21 @@ const server = http.createServer(async (req, res) => {
         fullName = String(data.fullName || "").trim(),
         className = String(data.className || "").trim(),
         guardianName = String(data.guardianName || "").trim(),
-        guardianPhone = String(data.guardianPhone || "").trim();
+        guardianPhone = String(data.guardianPhone || "").trim(),
+        dateOfBirth = String(data.dateOfBirth || "").trim(),
+        gender = String(data.gender || "").trim(),
+        address = String(data.address || "").trim(),
+        previousSchool = String(data.previousSchool || "").trim(),
+        admissionDate = String(data.admissionDate || "").trim();
       if (
         !/^[A-Z0-9][A-Z0-9\-/]{1,29}$/.test(studentNumber) ||
         !fullName ||
         !className ||
         guardianName.length > 100 ||
-        guardianPhone.length > 40
+        guardianPhone.length > 40 ||
+        (dateOfBirth && !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) ||
+        (admissionDate && !/^\d{4}-\d{2}-\d{2}$/.test(admissionDate)) ||
+        gender.length > 40 || address.length > 300 || previousSchool.length > 160
       ) {
         json(res, 400, { error: "Enter valid student details." });
         return;
@@ -1473,9 +1642,11 @@ const server = http.createServer(async (req, res) => {
         ).rows[0];
         return (
           await client.query(
-            `UPDATE students SET student_number=$3,full_name=$4,class_id=$5,guardian_name=$6,guardian_phone=$7,updated_at=now()
+            `UPDATE students SET student_number=$3,full_name=$4,class_id=$5,guardian_name=$6,guardian_phone=$7,
+                                 date_of_birth=$8,gender=$9,address=$10,previous_school=$11,admission_date=$12,updated_at=now()
              WHERE id=$1 AND school_id=$2
-             RETURNING id,student_number,full_name,guardian_name,guardian_phone,status`,
+             RETURNING id,student_number,full_name,guardian_name,guardian_phone,date_of_birth,gender,address,
+                       previous_school,admission_date,status`,
             [
               studentRoute[1],
               context.school_id,
@@ -1484,6 +1655,11 @@ const server = http.createServer(async (req, res) => {
               schoolClass.id,
               guardianName || null,
               guardianPhone || null,
+              dateOfBirth || null,
+              gender || null,
+              address || null,
+              previousSchool || null,
+              admissionDate || null,
             ],
           )
         ).rows[0];
@@ -1498,6 +1674,11 @@ const server = http.createServer(async (req, res) => {
         className,
         guardianName,
         guardianPhone,
+        dateOfBirth,
+        gender,
+        address,
+        previousSchool,
+        admissionDate,
       });
       json(res, 200, { student: updated });
       return;
@@ -2427,7 +2608,7 @@ const server = http.createServer(async (req, res) => {
               `UPDATE schools SET status='active',
                        trial_status=CASE WHEN $2 THEN 'active' ELSE trial_status END,
                        trial_started_at=CASE WHEN $2 THEN now() ELSE trial_started_at END,
-                       trial_ends_at=CASE WHEN $2 THEN now() + interval '3 months' ELSE trial_ends_at END,
+                       trial_ends_at=CASE WHEN $2 THEN now() + interval '2 months' ELSE trial_ends_at END,
                        updated_at=now()
                WHERE id=$1`,
               [found.school_id, trialGranted],
@@ -2451,6 +2632,8 @@ const server = http.createServer(async (req, res) => {
         ? "/product.html"
         : pathname === "/onboarding"
           ? "/onboarding.html"
+          : pathname === "/admissions"
+            ? "/admissions.html"
           : pathname;
     const target = path.resolve(
       root,
