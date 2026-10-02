@@ -28,3 +28,17 @@ test('cancellation lifecycle requires confirmation and records retention dates',
  assert.match(app,/Request immediate permanent deletion/);
  assert.match(app,/Permanently delete/);
 });
+test('self-onboarding creates an invited workspace and starts trials only after activation',async()=>{
+ const [server,schema,onboarding]=await Promise.all([
+  readFile('apps/school-web/server.mjs','utf8'),
+  readFile('apps/school-web/database/schema.sql','utf8'),
+  readFile('apps/school-web/public/onboarding.html','utf8'),
+ ]);
+ assert.match(onboarding,/value="self_service"/);
+ assert.match(onboarding,/Request onboarding assistance/);
+ assert.match(server,/status,onboarding_mode,trial_requested/);
+ assert.match(server,/pg_advisory_xact_lock\(20261002\)/);
+ assert.match(server,/trialCount < 10/);
+ assert.match(server,/now\(\) \+ interval '3 months'/);
+ assert.match(schema,/trial_ends_at timestamptz/);
+});

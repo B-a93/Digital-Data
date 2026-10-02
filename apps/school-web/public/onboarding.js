@@ -15,6 +15,7 @@ form.addEventListener("submit", async (event) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        onboardingMode: fields.get("onboardingMode"),
         organisationName: fields.get("organisationName"),
         organisationType: fields.get("organisationType"),
         region: fields.get("region"),
@@ -37,13 +38,15 @@ form.addEventListener("submit", async (event) => {
     if (!response.ok)
       throw Error(data.error || "The request could not be sent.");
     form.reset();
-    success.textContent =
-      "Your onboarding request has been received. Elegant Empire AI will contact you after reviewing the details.";
+    success.textContent = data.message ||
+      (fields.get("onboardingMode") === "self_service"
+        ? "Your workspace request has been received. Check your email for the secure activation link."
+        : "Your assisted onboarding request has been received. Elegant Empire AI will contact you after reviewing the details.");
     success.hidden = false;
   } catch (requestError) {
     error.textContent = requestError.message;
   } finally {
     button.disabled = false;
-    button.textContent = "Send onboarding request";
+    button.textContent = "Continue with onboarding";
   }
 });

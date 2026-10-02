@@ -314,7 +314,9 @@ function platform() {
       ? "Immediate deletion requested"
       : school.retention_until
         ? `Retain until ${new Date(school.retention_until).toLocaleDateString("en-GB")}`
-        : `Invitation: ${school.invitation_status || "not sent"}`;
+        : school.trial_status === "active" && school.trial_ends_at
+          ? `Free trial ends ${new Date(school.trial_ends_at).toLocaleDateString("en-GB")}`
+          : `Invitation: ${school.invitation_status || "not sent"}`;
   return (
     heading(
       "School and training-centre onboarding",
@@ -3055,11 +3057,13 @@ async function showPortal(session) {
       await loadProgrammes();
     }
   }
-  $(".demo-banner").hidden = Boolean(activeSchool);
-  $("#workspace-status").textContent = "DEMO";
-  $("#workspace-message").textContent =
-    "Secure login is active. This workspace contains demonstration records.";
-  $("#reset").hidden = false;
+  const trialActive = activeSchool?.trialStatus === "active";
+  $(".demo-banner").hidden = Boolean(activeSchool) && !trialActive;
+  $("#workspace-status").textContent = trialActive ? "FREE TRIAL" : "DEMO";
+  $("#workspace-message").textContent = trialActive
+    ? `Your three-month free trial is active until ${new Date(activeSchool.trialEndsAt).toLocaleDateString("en-GB")}.`
+    : "Secure login is active. This workspace contains demonstration records.";
+  $("#reset").hidden = Boolean(activeSchool);
   authScreen.hidden = true;
   authScreen.style.display = "none";
   layout.hidden = false;
@@ -3162,7 +3166,11 @@ async function acceptInvitation(token, session) {
     throw Error(data.error || "Unable to activate this school.");
   history.replaceState({}, "", location.pathname);
   await showPortal(session);
-  toast("School portal activated successfully.");
+  toast(
+    data.trialGranted
+      ? "School portal activated. Your three-month free trial has started."
+      : "School portal activated successfully.",
+  );
 }
 $("#invitation-form").onsubmit = async (e) => {
   e.preventDefault();

@@ -21,6 +21,12 @@ ALTER TABLE schools ADD COLUMN IF NOT EXISTS cancellation_requested_at timestamp
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS retention_until timestamptz;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS deletion_requested_at timestamptz;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS cancellation_reason text;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS onboarding_mode text NOT NULL DEFAULT 'assisted';
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS trial_requested boolean NOT NULL DEFAULT false;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS trial_status text NOT NULL DEFAULT 'none';
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS trial_started_at timestamptz;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS trial_ends_at timestamptz;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS estimated_student_count integer;
 
 CREATE TABLE IF NOT EXISTS school_data_deletions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

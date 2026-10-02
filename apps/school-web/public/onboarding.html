@@ -32,8 +32,8 @@
         <span class="eyebrow">SCHOOL AND TRAINING-CENTRE ONBOARDING</span>
         <h1>Tell us about your institution.</h1>
         <p>
-          Submit this short request and Elegant Empire AI will contact you to
-          confirm your needs, trial eligibility and onboarding arrangements.
+          Start your own school workspace or request help from Elegant Empire
+          AI with setup and existing data.
         </p>
         <div class="onboarding-note">
           <strong>Founding-schools offer</strong>
@@ -46,6 +46,19 @@
       <section class="onboarding-card" aria-labelledby="request-title">
         <h2 id="request-title">Request onboarding</h2>
         <form id="onboarding-request-form">
+          <fieldset class="onboarding-section onboarding-choice">
+            <legend>How would you like to begin?</legend>
+            <div class="choice-grid">
+              <label class="choice-card">
+                <input type="radio" name="onboardingMode" value="self_service" checked />
+                <span><strong>Start my portal</strong><small>Create the workspace and email me a secure activation link.</small></span>
+              </label>
+              <label class="choice-card">
+                <input type="radio" name="onboardingMode" value="assisted" />
+                <span><strong>Request onboarding assistance</strong><small>Ask for help with setup, paper records, PDFs or large data imports.</small></span>
+              </label>
+            </div>
+          </fieldset>
           <div class="form-grid">
             <div class="field">
               <label for="organisation-name">School or institution name</label>
@@ -210,10 +223,10 @@
           </div>
           <div class="form-actions">
             <button class="button" type="submit">
-              Send onboarding request
+              Continue with onboarding
             </button>
             <span class="status-text"
-              >We will review your request and contact you.</span
+              >Self-service activation is sent by email. Assisted requests are reviewed by our team.</span
             >
           </div>
           <div id="onboarding-error" class="error" role="alert"></div>

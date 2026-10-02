@@ -110,6 +110,25 @@ function invitation() {
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
   };
 }
+const schoolTypeCode = (label) =>
+  ({
+    "Public school": "public",
+    "Private school": "private",
+    "Mission school": "mission",
+    "Community school": "community",
+    "Vocational school": "vocational",
+    "Skills-training centre": "training_centre",
+    "College or specialised institute": "college",
+  })[label];
+function selfServiceSlug(name) {
+  const base = name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48) || "school";
+  return `${base}-${randomBytes(3).toString("hex")}`;
+}
 async function emailInvitation(record, invite) {
   if (!baseUrl()) throw new Error("APP_BASE_URL is not configured");
   await sendSchoolInvitation({
@@ -227,6 +246,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const request = {
+        onboardingMode: String(data.onboardingMode || "assisted").trim(),
         organisationName: String(data.organisationName || "").trim(),
         organisationType: String(data.organisationType || "").trim(),
         region: String(data.region || "").trim(),
@@ -250,6 +270,7 @@ const server = http.createServer(async (req, res) => {
       if (
         !request.organisationName ||
         !request.contactName ||
+        !["self_service", "assisted"].includes(request.onboardingMode) ||
         !/^\S+@\S+\.\S+$/.test(request.email) ||
         ![
           "Public school",
@@ -286,9 +307,74 @@ const server = http.createServer(async (req, res) => {
         json(res, 400, { error: "Enter valid onboarding details." });
         return;
       }
+      if (request.onboardingMode === "self_service") {
+        const invite = invitation(),
+          count = Number(request.studentCount || 0),
+          slug = selfServiceSlug(request.organisationName);
+        const record = await transaction(async (client) => {
+          const school = (
+            await client.query(
+              `INSERT INTO schools(name,slug,school_type,region,contact_name,contact_email,contact_phone,
+                                   status,onboarding_mode,trial_requested,estimated_student_count)
+               VALUES($1,$2,$3,$4,$5,$6,$7,'pending','self_service',$8,$9)
+               RETURNING id,name`,
+              [
+                request.organisationName,
+                slug,
+                schoolTypeCode(request.organisationType),
+                request.region || null,
+                request.contactName,
+                request.email,
+                request.phone || null,
+                request.trialRequested,
+                Number.isInteger(count) && count > 0 ? count : null,
+              ],
+            )
+          ).rows[0];
+          await client.query(
+            `INSERT INTO school_onboarding(school_id,administrator_name,administrator_email,
+                                           invitation_status,invitation_token_hash,invitation_expires_at,invited_at)
+             VALUES($1,$2,$3,'sent',$4,$5,now())`,
+            [school.id, request.contactName, request.email, invite.hash, invite.expiresAt],
+          );
+          return {
+            ...school,
+            administrator_name: request.contactName,
+            administrator_email: request.email,
+          };
+        });
+        let invitationSent = true;
+        try {
+          await emailInvitation(record, invite);
+        } catch (error) {
+          invitationSent = false;
+          console.error("[email] self-onboarding invitation failed:", error.message);
+          await query(
+            `UPDATE school_onboarding SET invitation_status='email_failed' WHERE school_id=$1`,
+            [record.id],
+          );
+        }
+        try {
+          await sendOnboardingRequest(request);
+        } catch (error) {
+          console.error("[email] self-onboarding notice failed:", error.message);
+        }
+        onboardingAttempts.set(ip, [...recent, now]);
+        json(res, 201, {
+          status: invitationSent ? "invitation_sent" : "email_failed",
+          message: invitationSent
+            ? "Your school workspace has been created. Check your email for the secure activation link."
+            : "Your workspace request was saved, but the activation email could not be delivered. Elegant Empire AI will contact you.",
+        });
+        return;
+      }
       await sendOnboardingRequest(request);
       onboardingAttempts.set(ip, [...recent, now]);
-      json(res, 201, { status: "received" });
+      json(res, 201, {
+        status: "received",
+        message:
+          "Your assisted onboarding request has been received. Elegant Empire AI will contact you after reviewing the details.",
+      });
       return;
     }
     if (pathname === "/api/me") {
@@ -308,7 +394,8 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const membership = await query(
-        `SELECT su.role,s.id,s.name,s.slug,s.current_term,s.pass_mark,s.grade_scale,s.school_type,s.status
+        `SELECT su.role,s.id,s.name,s.slug,s.current_term,s.pass_mark,s.grade_scale,s.school_type,s.status,
+                s.trial_status,s.trial_started_at,s.trial_ends_at
          FROM school_users su JOIN schools s ON s.id=su.school_id
          WHERE su.auth_user_id=$1 AND s.status='active'
          ORDER BY su.created_at LIMIT 1`,
@@ -332,6 +419,9 @@ const server = http.createServer(async (req, res) => {
           gradeScale: row.grade_scale,
           schoolType: row.school_type,
           status: row.status,
+          trialStatus: row.trial_status,
+          trialStartedAt: row.trial_started_at,
+          trialEndsAt: row.trial_ends_at,
         },
       });
       return;
@@ -2062,6 +2152,7 @@ const server = http.createServer(async (req, res) => {
         const result = await query(
           `SELECT s.id,s.name,s.slug,s.school_type,s.region,s.district,s.status,s.created_at,
                   s.cancellation_requested_at,s.retention_until,s.deletion_requested_at,
+                  s.onboarding_mode,s.trial_requested,s.trial_status,s.trial_started_at,s.trial_ends_at,
                   o.administrator_name,o.administrator_email,o.invitation_status,o.invited_at,o.invitation_expires_at
            FROM schools s LEFT JOIN school_onboarding o ON o.school_id=s.id ORDER BY s.created_at DESC`,
         );
@@ -2271,7 +2362,10 @@ const server = http.createServer(async (req, res) => {
         const result = await transaction(async (client) => {
           let found = (
             await client.query(
-              `SELECT o.school_id,o.administrator_email FROM school_onboarding o WHERE o.invitation_token_hash=$1 AND o.accepted_at IS NULL AND o.invitation_expires_at>now() FOR UPDATE`,
+              `SELECT o.school_id,o.administrator_email,s.trial_requested
+               FROM school_onboarding o JOIN schools s ON s.id=o.school_id
+               WHERE o.invitation_token_hash=$1 AND o.accepted_at IS NULL
+                 AND o.invitation_expires_at>now() FOR UPDATE OF o`,
               [hash],
             )
           ).rows[0];
@@ -2313,18 +2407,40 @@ const server = http.createServer(async (req, res) => {
               [found.id, user.id],
             );
           else {
+            let trialGranted = false;
+            if (found.trial_requested) {
+              await client.query(`SELECT pg_advisory_xact_lock(20261002)`);
+              const trialCount = Number(
+                (
+                  await client.query(
+                    `SELECT count(*)::integer AS total FROM schools WHERE trial_started_at IS NOT NULL`,
+                  )
+                ).rows[0].total,
+              );
+              trialGranted = trialCount < 10;
+            }
             await client.query(
               `UPDATE school_onboarding SET invitation_status='accepted',accepted_at=now(),auth_user_id=$2,invitation_token_hash=NULL WHERE school_id=$1`,
               [found.school_id, user.id],
             );
             await client.query(
-              `UPDATE schools SET status='active',updated_at=now() WHERE id=$1`,
-              [found.school_id],
+              `UPDATE schools SET status='active',
+                       trial_status=CASE WHEN $2 THEN 'active' ELSE trial_status END,
+                       trial_started_at=CASE WHEN $2 THEN now() ELSE trial_started_at END,
+                       trial_ends_at=CASE WHEN $2 THEN now() + interval '3 months' ELSE trial_ends_at END,
+                       updated_at=now()
+               WHERE id=$1`,
+              [found.school_id, trialGranted],
             );
+            found.trialGranted = trialGranted;
           }
           return found;
         });
-        json(res, 200, { status: "accepted", schoolId: result.school_id });
+        json(res, 200, {
+          status: "accepted",
+          schoolId: result.school_id,
+          trialGranted: Boolean(result.trialGranted),
+        });
         return;
       }
       json(res, 405, { error: "Method not allowed" });

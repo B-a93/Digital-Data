@@ -62,6 +62,7 @@ export async function sendOnboardingRequest(request) {
   const from = process.env.SMTP_FROM?.trim() || process.env.SMTP_USER?.trim();
   const to = process.env.ONBOARDING_EMAIL?.trim() || from;
   const lines = [
+    `Onboarding route: ${request.onboardingMode === "self_service" ? "Self-service" : "Assisted"}`,
     `Organisation: ${request.organisationName}`,
     `Type: ${request.organisationType}`,
     `Region: ${request.region || "Not provided"}`,
@@ -87,6 +88,10 @@ export async function sendOnboardingRequest(request) {
     subject: `School portal onboarding request · ${request.organisationName}`,
     text: lines.join("\n"),
     html: `<h2>School portal onboarding request</h2><dl>${[
+      [
+        "Onboarding route",
+        request.onboardingMode === "self_service" ? "Self-service" : "Assisted",
+      ],
       ["Organisation", request.organisationName],
       ["Type", request.organisationType],
       ["Region", request.region || "Not provided"],
