@@ -45,7 +45,7 @@
       </section>
       <section class="onboarding-card" aria-labelledby="request-title">
         <h2 id="request-title">Request onboarding</h2>
-        <form id="onboarding-request-form">
+        <form id="onboarding-request-form" novalidate>
           <fieldset class="onboarding-section onboarding-choice">
             <legend>How would you like to begin?</legend>
             <div class="choice-grid">
@@ -61,7 +61,7 @@
           </fieldset>
           <div class="form-grid">
             <div class="field">
-              <label for="organisation-name">School or institution name</label>
+              <label for="organisation-name">School or institution name <span aria-hidden="true">*</span></label>
               <input
                 id="organisation-name"
                 name="organisationName"
@@ -70,7 +70,7 @@
               />
             </div>
             <div class="field">
-              <label for="organisation-type">Institution type</label>
+              <label for="organisation-type">Institution type <span aria-hidden="true">*</span></label>
               <select id="organisation-type" name="organisationType" required>
                 <option value="">Choose a type</option>
                 <option>Public school</option>
@@ -98,7 +98,7 @@
               />
             </div>
             <div class="field">
-              <label for="contact-name">Contact person’s name</label>
+              <label for="contact-name">Contact person’s name <span aria-hidden="true">*</span></label>
               <input
                 id="contact-name"
                 name="contactName"
@@ -108,7 +108,7 @@
               />
             </div>
             <div class="field">
-              <label for="contact-email">Email address</label>
+              <label for="contact-email">Email address <span aria-hidden="true">*</span></label>
               <input
                 id="contact-email"
                 name="email"
@@ -158,7 +158,7 @@
             </p>
             <div class="form-grid">
               <div class="field">
-                <label for="import-help">Do you need help importing records?</label>
+                <label for="import-help">Do you need help importing records? <span aria-hidden="true">*</span></label>
                 <select id="import-help" name="importHelp" required>
                   <option value="">Choose an option</option>
                   <option value="No existing data to import">No existing data to import</option>
@@ -167,7 +167,7 @@
                 </select>
               </div>
               <div class="field">
-                <label for="data-format">Current record format</label>
+                <label for="data-format">Current record format <span aria-hidden="true">*</span></label>
                 <select id="data-format" name="dataFormat" required>
                   <option value="">Choose a format</option>
                   <option>None</option>
@@ -229,7 +229,7 @@
               >Self-service activation is sent by email. Assisted requests are reviewed by our team.</span
             >
           </div>
-          <div id="onboarding-error" class="error" role="alert"></div>
+          <div id="onboarding-error" class="error" role="alert" aria-live="assertive"></div>
           <div
             id="onboarding-success"
             class="onboarding-success"

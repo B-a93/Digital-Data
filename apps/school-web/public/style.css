@@ -997,6 +997,10 @@ a:focus-visible {
 .choice-card small {
   display: block;
 }
+.was-validated :invalid {
+  border-color: #a83f35;
+  box-shadow: 0 0 0 2px rgba(168, 63, 53, 0.12);
+}
 .choice-card small {
   color: var(--muted);
   line-height: 1.5;

@@ -7,6 +7,15 @@ form.addEventListener("submit", async (event) => {
   const button = form.querySelector("button[type='submit']");
   error.textContent = "";
   success.hidden = true;
+  form.classList.add("was-validated");
+  if (!form.checkValidity()) {
+    const invalid = form.querySelector(":invalid");
+    error.textContent =
+      "Please complete all required fields marked with *. Check the institution type, both Data Import choices and the data-retention agreement.";
+    invalid?.scrollIntoView({ behavior: "smooth", block: "center" });
+    invalid?.focus({ preventScroll: true });
+    return;
+  }
   button.disabled = true;
   button.textContent = "Sending…";
   try {
@@ -38,6 +47,7 @@ form.addEventListener("submit", async (event) => {
     if (!response.ok)
       throw Error(data.error || "The request could not be sent.");
     form.reset();
+    form.classList.remove("was-validated");
     success.textContent = data.message ||
       (fields.get("onboardingMode") === "self_service"
         ? "Your workspace request has been received. Check your email for the secure activation link."

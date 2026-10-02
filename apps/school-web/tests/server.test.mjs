@@ -42,3 +42,13 @@ test('self-onboarding creates an invited workspace and starts trials only after 
  assert.match(server,/now\(\) \+ interval '3 months'/);
  assert.match(schema,/trial_ends_at timestamptz/);
 });
+test('onboarding displays a clear validation error instead of silently stopping',async()=>{
+ const [html,script]=await Promise.all([
+  readFile('apps/school-web/public/onboarding.html','utf8'),
+  readFile('apps/school-web/public/onboarding.js','utf8'),
+ ]);
+ assert.match(html,/id="onboarding-request-form" novalidate/);
+ assert.match(script,/form\.checkValidity\(\)/);
+ assert.match(script,/both Data Import choices/);
+ assert.match(script,/scrollIntoView/);
+});
