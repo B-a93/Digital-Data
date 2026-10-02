@@ -17,6 +17,22 @@ ALTER TABLE schools ADD COLUMN IF NOT EXISTS contact_email text;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS contact_phone text;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'pending';
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS grade_scale jsonb NOT NULL DEFAULT '{"A":80,"B":70,"C":60}'::jsonb;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS cancellation_requested_at timestamptz;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS retention_until timestamptz;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS deletion_requested_at timestamptz;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS cancellation_reason text;
+
+CREATE TABLE IF NOT EXISTS school_data_deletions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL,
+  school_name text NOT NULL,
+  requested_by text,
+  requested_at timestamptz NOT NULL,
+  deletion_reason text NOT NULL,
+  completed_by text,
+  completed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
 
 CREATE TABLE IF NOT EXISTS school_onboarding (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
+import {readFile} from 'node:fs/promises';
 test('server serves prototype and rejects missing files',async()=>{
  const child=spawn(process.execPath,['apps/school-web/server.mjs'],{env:{...process.env,PORT:'3107'}});
  try {
@@ -14,4 +15,16 @@ test('server serves prototype and rejects missing files',async()=>{
   assert.equal((await fetch('http://127.0.0.1:3107/domain.js')).status,200);
   assert.equal((await fetch('http://127.0.0.1:3107/missing.txt')).status,404);
  } finally {child.kill();}
+});
+test('cancellation lifecycle requires confirmation and records retention dates',async()=>{
+ const [server,schema,app]=await Promise.all([
+  readFile('apps/school-web/server.mjs','utf8'),
+  readFile('apps/school-web/database/schema.sql','utf8'),
+  readFile('apps/school-web/public/app.js','utf8'),
+ ]);
+ assert.match(server,/confirmation !== context\.name/);
+ assert.match(server,/now\(\) \+ interval '3 months'/);
+ assert.match(schema,/CREATE TABLE IF NOT EXISTS school_data_deletions/);
+ assert.match(app,/Request immediate permanent deletion/);
+ assert.match(app,/Permanently delete/);
 });

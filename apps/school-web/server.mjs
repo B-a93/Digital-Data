@@ -238,6 +238,13 @@ const server = http.createServer(async (req, res) => {
         studentCount: String(data.studentCount || "").trim(),
         preferredContact: String(data.preferredContact || "Email").trim(),
         trialRequested: Boolean(data.trialRequested),
+        importHelp: String(data.importHelp || "").trim(),
+        dataFormat: String(data.dataFormat || "").trim(),
+        academicYears: String(data.academicYears || "").trim(),
+        importScope: Array.isArray(data.importScope)
+          ? [...new Set(data.importScope.map((value) => String(value).trim()))]
+          : [],
+        retentionAcknowledged: data.retentionAcknowledged === true,
         message: String(data.message || "").trim(),
       };
       if (
@@ -254,6 +261,24 @@ const server = http.createServer(async (req, res) => {
           "College or specialised institute",
         ].includes(request.organisationType) ||
         !["Email", "Phone", "WhatsApp"].includes(request.preferredContact) ||
+        ![
+          "No existing data to import",
+          "Self-service import",
+          "Assisted import",
+        ].includes(request.importHelp) ||
+        ![
+          "None",
+          "Excel or CSV",
+          "PDF",
+          "Paper records",
+          "Another school system",
+          "Mixed formats",
+        ].includes(request.dataFormat) ||
+        request.importScope.some(
+          (value) =>
+            !["Student profiles", "Fees and payments", "Attendance", "Results"].includes(value),
+        ) ||
+        !request.retentionAcknowledged ||
         Object.values(request).some(
           (value) => typeof value === "string" && value.length > 1200,
         )
@@ -1056,6 +1081,67 @@ const server = http.createServer(async (req, res) => {
         },
       );
       json(res, 200, { settings });
+      return;
+    }
+    if (pathname === "/api/school/cancellation") {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method !== "POST") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const data = await readJsonBody(req),
+        deletionChoice = String(data.deletionChoice || ""),
+        reason = String(data.reason || "").trim(),
+        confirmation = String(data.confirmation || "").trim();
+      if (
+        !["retain_three_months", "delete_immediately"].includes(deletionChoice) ||
+        reason.length > 500 ||
+        confirmation !== context.name
+      ) {
+        json(res, 400, {
+          error: "Choose a data option and enter the school name exactly to confirm.",
+        });
+        return;
+      }
+      const immediate = deletionChoice === "delete_immediately";
+      const school = (
+        await query(
+          `UPDATE schools
+           SET status=$2,cancellation_requested_at=now(),
+               retention_until=CASE WHEN $3 THEN NULL ELSE now() + interval '3 months' END,
+               deletion_requested_at=CASE WHEN $3 THEN now() ELSE NULL END,
+               cancellation_reason=$4,updated_at=now()
+           WHERE id=$1 AND status='active'
+           RETURNING id,name,status,cancellation_requested_at,retention_until,deletion_requested_at`,
+          [
+            context.school_id,
+            immediate ? "pending_deletion" : "cancelled",
+            immediate,
+            reason || null,
+          ],
+        )
+      ).rows[0];
+      if (!school) {
+        json(res, 409, { error: "This workspace is no longer active." });
+        return;
+      }
+      await query(
+        `INSERT INTO school_data_deletions(school_id,school_name,requested_by,requested_at,deletion_reason)
+         VALUES($1,$2,$3,now(),$4)`,
+        [
+          context.school_id,
+          context.name,
+          context.email,
+          immediate ? "immediate_request" : "retention_expiry",
+        ],
+      );
+      await recordAudit(context, "school.cancellation_requested", "school", context.school_id, {
+        deletionChoice,
+        retentionUntil: school.retention_until,
+        reason: reason || null,
+      });
+      json(res, 200, { school });
       return;
     }
     if (pathname === "/api/school/classes") {
@@ -1974,7 +2060,10 @@ const server = http.createServer(async (req, res) => {
       await requirePlatformOwner(req);
       if (req.method === "GET") {
         const result = await query(
-          `SELECT s.id,s.name,s.slug,s.school_type,s.region,s.district,s.status,s.created_at,o.administrator_name,o.administrator_email,o.invitation_status,o.invited_at,o.invitation_expires_at FROM schools s LEFT JOIN school_onboarding o ON o.school_id=s.id ORDER BY s.created_at DESC`,
+          `SELECT s.id,s.name,s.slug,s.school_type,s.region,s.district,s.status,s.created_at,
+                  s.cancellation_requested_at,s.retention_until,s.deletion_requested_at,
+                  o.administrator_name,o.administrator_email,o.invitation_status,o.invited_at,o.invitation_expires_at
+           FROM schools s LEFT JOIN school_onboarding o ON o.school_id=s.id ORDER BY s.created_at DESC`,
         );
         json(res, 200, { schools: result.rows });
         return;
@@ -2057,6 +2146,61 @@ const server = http.createServer(async (req, res) => {
               "School created, but the invitation email could not be sent. Check SMTP settings and use Resend.",
           });
         }
+        return;
+      }
+      json(res, 405, { error: "Method not allowed" });
+      return;
+    }
+    const schoolLifecycle = pathname.match(
+      /^\/api\/platform\/schools\/([0-9a-f-]{36})$/,
+    );
+    if (schoolLifecycle) {
+      const owner = await requirePlatformOwner(req);
+      if (req.method === "PATCH") {
+        const school = (
+          await query(
+            `UPDATE schools SET status='active',cancellation_requested_at=NULL,
+                    retention_until=NULL,deletion_requested_at=NULL,cancellation_reason=NULL,updated_at=now()
+             WHERE id=$1 AND status IN ('cancelled','pending_deletion')
+             RETURNING id,name,status`,
+            [schoolLifecycle[1]],
+          )
+        ).rows[0];
+        if (!school) {
+          json(res, 404, { error: "Cancelled school not found." });
+          return;
+        }
+        json(res, 200, { school });
+        return;
+      }
+      if (req.method === "DELETE") {
+        const data = await readJsonBody(req),
+          confirmation = String(data.confirmation || "").trim();
+        const school = (
+          await query(
+            `SELECT id,name,status,retention_until,deletion_requested_at FROM schools WHERE id=$1`,
+            [schoolLifecycle[1]],
+          )
+        ).rows[0];
+        const eligible =
+          school &&
+          (school.deletion_requested_at ||
+            (school.retention_until && new Date(school.retention_until) <= new Date()));
+        if (!eligible || confirmation !== school.name) {
+          json(res, 409, {
+            error: "Deletion is not yet eligible or the school name does not match.",
+          });
+          return;
+        }
+        await transaction(async (client) => {
+          await client.query(
+            `UPDATE school_data_deletions SET completed_by=$2,completed_at=now()
+             WHERE school_id=$1 AND completed_at IS NULL`,
+            [school.id, owner.email],
+          );
+          await client.query(`DELETE FROM schools WHERE id=$1`, [school.id]);
+        });
+        json(res, 200, { status: "deleted" });
         return;
       }
       json(res, 405, { error: "Method not allowed" });

@@ -299,12 +299,28 @@ function platform() {
   ];
   const typeLabel = (value) =>
     organisationTypes.find(([key]) => key === value)?.[1] || value;
+  const lifecycleAction = (school) => {
+    if (!["cancelled", "pending_deletion"].includes(school.status))
+      return school.status === "active"
+        ? "—"
+        : `<button class="text-button resend-invitation" data-id="${esc(school.id)}">Resend invitation</button>`;
+    const eligible =
+      Boolean(school.deletion_requested_at) ||
+      (school.retention_until && new Date(school.retention_until) <= new Date());
+    return `<div class="quick-actions"><button class="text-button restore-school" data-id="${esc(school.id)}" data-name="${esc(school.name)}">Restore</button>${eligible ? `<button class="text-button delete-school" data-id="${esc(school.id)}" data-name="${esc(school.name)}">Permanently delete</button>` : ""}</div>`;
+  };
+  const lifecycleNote = (school) =>
+    school.deletion_requested_at
+      ? "Immediate deletion requested"
+      : school.retention_until
+        ? `Retain until ${new Date(school.retention_until).toLocaleDateString("en-GB")}`
+        : `Invitation: ${school.invitation_status || "not sent"}`;
   return (
     heading(
       "School and training-centre onboarding",
       "Create and monitor protected education workspaces.",
     ) +
-    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>Create an education workspace</h2><span class="badge gray">Platform Owner</span></div><form id="school-onboarding-form"><div class="form-grid"><div class="field"><label>Organisation name</label><input name="name" maxlength="100" required></div><div class="field"><label>Organisation code</label><input name="slug" maxlength="60" pattern="[-a-z0-9]{3,60}" placeholder="e.g. brikama-skills-centre" required></div><div class="field"><label>Organisation type</label><select name="schoolType">${organisationTypes.map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></div><div class="field"><label>Region</label><input name="region" maxlength="80"></div><div class="field"><label>District</label><input name="district" maxlength="80"></div><div class="field"><label>Administrator name</label><input name="administratorName" maxlength="100" required></div><div class="field"><label>Administrator email</label><input name="administratorEmail" type="email" required></div></div><div class="form-actions"><button class="button">Create workspace and send invitation</button></div><div id="platform-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Education workspaces</h2><button id="refresh-schools" class="text-button">Refresh</button></div>${table(["Organisation", "Type", "Administrator", "Status", "Action"], platformSchools.map((s) => `<tr><td>${esc(s.name)}<span class="sub">${esc(s.slug)}</span></td><td>${esc(typeLabel(s.school_type))}</td><td>${esc(s.administrator_name || "—")}<span class="sub">${esc(s.administrator_email || "")}</span></td><td><span class="badge ${s.status === "active" ? "" : "amber"}">${esc(s.status)}</span><span class="sub">Invitation: ${esc(s.invitation_status || "not sent")}</span></td><td>${s.status === "active" ? "—" : `<button class="text-button resend-invitation" data-id="${esc(s.id)}">Resend invitation</button>`}</td></tr>`).join(""))}</section></div>`
+    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>Create an education workspace</h2><span class="badge gray">Platform Owner</span></div><form id="school-onboarding-form"><div class="form-grid"><div class="field"><label>Organisation name</label><input name="name" maxlength="100" required></div><div class="field"><label>Organisation code</label><input name="slug" maxlength="60" pattern="[-a-z0-9]{3,60}" placeholder="e.g. brikama-skills-centre" required></div><div class="field"><label>Organisation type</label><select name="schoolType">${organisationTypes.map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></div><div class="field"><label>Region</label><input name="region" maxlength="80"></div><div class="field"><label>District</label><input name="district" maxlength="80"></div><div class="field"><label>Administrator name</label><input name="administratorName" maxlength="100" required></div><div class="field"><label>Administrator email</label><input name="administratorEmail" type="email" required></div></div><div class="form-actions"><button class="button">Create workspace and send invitation</button></div><div id="platform-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Education workspaces</h2><button id="refresh-schools" class="text-button">Refresh</button></div>${table(["Organisation", "Type", "Administrator", "Status", "Action"], platformSchools.map((s) => `<tr><td>${esc(s.name)}<span class="sub">${esc(s.slug)}</span></td><td>${esc(typeLabel(s.school_type))}</td><td>${esc(s.administrator_name || "—")}<span class="sub">${esc(s.administrator_email || "")}</span></td><td><span class="badge ${s.status === "active" ? "" : "amber"}">${esc(s.status)}</span><span class="sub">${esc(lifecycleNote(s))}</span></td><td>${lifecycleAction(s)}</td></tr>`).join(""))}</section></div>`
   );
 }
 async function platformApi(path, options = {}) {
@@ -1364,6 +1380,9 @@ function settings() {
   const programmesSection = isTrainingOrganisation()
     ? `<section class="panel"><div class="panel-heading"><div><h2>Courses and programmes</h2><p>Configure the qualifications offered by this training centre.</p></div><small>${schoolProgrammes.length} configured</small></div><form id="programme-form"><div class="form-grid"><div class="field"><label for="programme-name">Programme name</label><input id="programme-name" name="name" maxlength="100" required placeholder="e.g. Commercial Cookery"></div><div class="field"><label for="programme-duration">Duration in months</label><input id="programme-duration" name="durationMonths" type="number" min="1" max="120" required placeholder="12"></div><div class="field"><label for="programme-qualification">Certificate or qualification</label><input id="programme-qualification" name="qualification" maxlength="100" required placeholder="e.g. Level 2 Certificate"></div></div><div class="form-actions"><button class="button">Add programme</button></div><div id="programme-error" class="error" role="alert"></div></form>${table(["Programme", "Duration", "Qualification", "Status", "Action"], schoolProgrammes.map((programme) => `<tr><td>${esc(programme.name)}</td><td>${programme.duration_months} months</td><td>${esc(programme.qualification)}</td><td><span class="badge">${esc(programme.status)}</span></td><td><button class="text-button remove-programme" data-id="${esc(programme.id)}" data-name="${esc(programme.name)}">Remove</button></td></tr>`).join(""))}</section>`
     : "";
+  const cancellationSection = schoolDataLive
+    ? `<section class="panel danger-zone"><div class="panel-heading"><div><h2>Cancel portal service</h2><p>Cancellation stops access to this school workspace.</p></div><span class="badge amber">Administrator only</span></div><form id="cancellation-form"><div class="field"><label for="cancellation-data">What should happen to the school data?</label><select id="cancellation-data" name="deletionChoice" required><option value="retain_three_months">Retain securely for three months, then delete</option><option value="delete_immediately">Request immediate permanent deletion</option></select></div><div class="field"><label for="cancellation-reason">Reason for cancellation (optional)</label><textarea id="cancellation-reason" name="reason" rows="3" maxlength="500"></textarea></div><div class="field"><label for="cancellation-confirmation">Type <strong>${esc(state.settings.name)}</strong> to confirm</label><input id="cancellation-confirmation" name="confirmation" autocomplete="off" required></div><div class="note">During the three-month recovery period, portal access is disabled. Contact Elegant Empire AI to restore the workspace. Immediate deletion cannot be reversed after final platform-owner confirmation.</div><div class="form-actions"><button class="button secondary" type="submit">Request cancellation</button></div><div id="cancellation-error" class="error" role="alert"></div></form></section>`
+    : "";
   return (
     heading(
       "School settings",
@@ -1387,7 +1406,7 @@ function settings() {
           return `<tr><td>${esc(name)}</td><td>${count}</td><td><button class="text-button remove-fee-type" data-name="${esc(name)}" ${count || state.settings.feeTypes.length === 1 ? "disabled" : ""}>Remove</button></td></tr>`;
         })
         .join(""),
-    )}<div class="note">A fee type cannot be removed after it has been used for a charge.</div></section>${programmesSection}<section class="panel"><div class="panel-heading"><h2>School subjects</h2><small>${state.settings.subjects.length} configured</small></div><form id="subject-form" class="toolbar"><input name="subjectName" maxlength="80" required placeholder="e.g. Mathematics" aria-label="New subject name"><button class="button">Add subject</button></form><div id="subject-error" class="error" role="alert"></div>${table(["Subject", "Action"], state.settings.subjects.map((name) => `<tr><td>${esc(name)}</td><td><button class="text-button remove-subject" data-name="${esc(name)}">Remove</button></td></tr>`).join(""))}<div class="note">Subjects will be used for assessments and student report cards.</div></section><div class="note">Published results retain their original term and threshold. ${schoolDataLive ? "These settings are stored securely in Neon." : "These prototype settings are stored only in this browser."}</div></div>`
+    )}<div class="note">A fee type cannot be removed after it has been used for a charge.</div></section>${programmesSection}<section class="panel"><div class="panel-heading"><h2>School subjects</h2><small>${state.settings.subjects.length} configured</small></div><form id="subject-form" class="toolbar"><input name="subjectName" maxlength="80" required placeholder="e.g. Mathematics" aria-label="New subject name"><button class="button">Add subject</button></form><div id="subject-error" class="error" role="alert"></div>${table(["Subject", "Action"], state.settings.subjects.map((name) => `<tr><td>${esc(name)}</td><td><button class="text-button remove-subject" data-name="${esc(name)}">Remove</button></td></tr>`).join(""))}<div class="note">Subjects will be used for assessments and student report cards.</div></section><div class="note">Published results retain their original term and threshold. ${schoolDataLive ? "These settings are stored securely in Neon." : "These prototype settings are stored only in this browser."}</div>${cancellationSection}</div>`
   );
 }
 function wire() {
@@ -1440,6 +1459,41 @@ function wire() {
             $("#platform-error").textContent = err.message;
           } finally {
             button.disabled = false;
+          }
+        }),
+    );
+    document.querySelectorAll(".restore-school").forEach(
+      (button) =>
+        (button.onclick = async () => {
+          if (!confirm(`Restore portal access for ${button.dataset.name}?`)) return;
+          try {
+            await platformApi(`/api/platform/schools/${button.dataset.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ action: "restore" }),
+            });
+            await loadSchools();
+            toast("School workspace restored.");
+          } catch (err) {
+            $("#platform-error").textContent = err.message;
+          }
+        }),
+    );
+    document.querySelectorAll(".delete-school").forEach(
+      (button) =>
+        (button.onclick = async () => {
+          const confirmation = prompt(
+            `Permanent deletion cannot be undone. Type ${button.dataset.name} to continue.`,
+          );
+          if (confirmation !== button.dataset.name) return;
+          try {
+            await platformApi(`/api/platform/schools/${button.dataset.id}`, {
+              method: "DELETE",
+              body: JSON.stringify({ confirmation }),
+            });
+            await loadSchools();
+            toast("School workspace and its records were permanently deleted.");
+          } catch (err) {
+            $("#platform-error").textContent = err.message;
           }
         }),
     );
@@ -2290,6 +2344,37 @@ function wire() {
     $("#payment-print").onclick = printPaymentReport;
   }
   if (view === "settings") {
+    if ($("#cancellation-form")) {
+      $("#cancellation-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(e.target)),
+          button = e.target.querySelector("button[type='submit']");
+        if (
+          !confirm(
+            data.deletionChoice === "delete_immediately"
+              ? "Request immediate permanent deletion of this school workspace?"
+              : "Cancel access and begin the three-month recovery period?",
+          )
+        )
+          return;
+        button.disabled = true;
+        $("#cancellation-error").textContent = "";
+        try {
+          const result = await schoolApi("/api/school/cancellation", {
+            method: "POST",
+            body: JSON.stringify(data),
+          });
+          await auth.signOut();
+          const message = result.school.deletion_requested_at
+            ? "Cancellation received. Immediate deletion is awaiting secure confirmation."
+            : `Cancellation received. Data recovery is available until ${new Date(result.school.retention_until).toLocaleDateString("en-GB")}.`;
+          showLogin(message);
+        } catch (err) {
+          $("#cancellation-error").textContent = err.message;
+          button.disabled = false;
+        }
+      };
+    }
     if ($("#programme-form")) {
       $("#programme-form").onsubmit = async (e) => {
         e.preventDefault();

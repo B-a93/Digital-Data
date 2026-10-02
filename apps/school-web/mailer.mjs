@@ -71,6 +71,11 @@ export async function sendOnboardingRequest(request) {
     `Estimated learners: ${request.studentCount || "Not provided"}`,
     `Preferred contact: ${request.preferredContact}`,
     `Three-month trial: ${request.trialRequested ? "Requested" : "Not requested"}`,
+    `Import support: ${request.importHelp}`,
+    `Current data format: ${request.dataFormat}`,
+    `Academic years to import: ${request.academicYears || "Not provided"}`,
+    `Import scope: ${request.importScope.join(", ") || "Not provided"}`,
+    "Retention policy: Acknowledged",
     "",
     "Additional information:",
     request.message || "None provided",
@@ -94,6 +99,11 @@ export async function sendOnboardingRequest(request) {
         "Three-month trial",
         request.trialRequested ? "Requested" : "Not requested",
       ],
+      ["Import support", request.importHelp],
+      ["Current data format", request.dataFormat],
+      ["Academic years to import", request.academicYears || "Not provided"],
+      ["Import scope", request.importScope.join(", ") || "Not provided"],
+      ["Retention policy", "Acknowledged"],
     ]
       .map(
         ([label, value]) =>

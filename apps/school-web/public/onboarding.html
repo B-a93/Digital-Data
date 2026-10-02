@@ -136,9 +136,68 @@
               placeholder="For example: student records, attendance, fees, results or staff access."
             ></textarea>
           </div>
+          <fieldset class="onboarding-section">
+            <legend>Data Import</legend>
+            <p class="section-help">
+              Tell us how your existing records are stored. Do not upload or
+              email student records at this stage. We will provide a secure
+              import process after your school has been verified.
+            </p>
+            <div class="form-grid">
+              <div class="field">
+                <label for="import-help">Do you need help importing records?</label>
+                <select id="import-help" name="importHelp" required>
+                  <option value="">Choose an option</option>
+                  <option value="No existing data to import">No existing data to import</option>
+                  <option value="Self-service import">We will use the import template ourselves</option>
+                  <option value="Assisted import">We need assisted data import</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="data-format">Current record format</label>
+                <select id="data-format" name="dataFormat" required>
+                  <option value="">Choose a format</option>
+                  <option>None</option>
+                  <option>Excel or CSV</option>
+                  <option>PDF</option>
+                  <option>Paper records</option>
+                  <option>Another school system</option>
+                  <option>Mixed formats</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="academic-years">Academic years to import</label>
+                <input id="academic-years" name="academicYears" maxlength="120" placeholder="For example: current year only or 2024–2026" />
+              </div>
+            </div>
+            <div class="field">
+              <span class="field-label">Records included in the import</span>
+              <div class="check-grid">
+                <label><input type="checkbox" name="importScope" value="Student profiles" /> Student profiles</label>
+                <label><input type="checkbox" name="importScope" value="Fees and payments" /> Fees and payments</label>
+                <label><input type="checkbox" name="importScope" value="Attendance" /> Attendance</label>
+                <label><input type="checkbox" name="importScope" value="Results" /> Results</label>
+              </div>
+            </div>
+          </fieldset>
           <label class="trial-check">
             <input name="trialRequested" type="checkbox" checked />
             I would like to be considered for the three-month free trial.
+          </label>
+          <div class="retention-notice">
+            <strong>Cancellation and data retention</strong>
+            <p>
+              If the school cancels or does not continue after the free trial,
+              its portal access will end and its data will be retained securely
+              for up to three months in case the school changes its mind. The
+              school may request immediate permanent deletion at any time.
+              Unless the school returns or requests earlier deletion, the data
+              will be permanently deleted after the three-month recovery period.
+            </p>
+          </div>
+          <label class="trial-check">
+            <input name="retentionAcknowledged" type="checkbox" required />
+            I understand the cancellation and data-retention policy.
           </label>
           <div class="honeypot" aria-hidden="true">
             <label for="website">Website</label>

@@ -424,8 +424,24 @@ label {
   gap: 7px;
 }
 .field input,
-.field select {
+.field select,
+.field textarea {
   width: 100%;
+}
+.field textarea {
+  padding: 10px 12px;
+  color: #304b40;
+  background: #fff;
+  border: 1px solid #ccd8d1;
+  border-radius: 6px;
+  resize: vertical;
+  font: inherit;
+}
+.danger-zone {
+  border-color: #d9b3ad;
+}
+.danger-zone h2 {
+  color: #823c34;
 }
 .form-actions {
   margin-top: 20px;
@@ -908,6 +924,54 @@ a:focus-visible {
 }
 .onboarding-message {
   margin-top: 20px;
+}
+.onboarding-section {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  margin: 24px 0;
+  padding: 20px;
+}
+.onboarding-section legend {
+  font-size: 18px;
+  font-weight: 700;
+  padding: 0 8px;
+}
+.section-help {
+  color: var(--muted);
+  margin: 0 0 20px;
+}
+.field-label {
+  display: block;
+  font-weight: 600;
+  margin: 18px 0 10px;
+}
+.check-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.check-grid label {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+.check-grid input {
+  width: auto;
+}
+.retention-notice {
+  background: #f3f8f6;
+  border-left: 4px solid #146a56;
+  border-radius: 8px;
+  margin: 20px 0;
+  padding: 16px 18px;
+}
+.retention-notice p {
+  margin: 6px 0 0;
+}
+@media (max-width: 640px) {
+  .check-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .onboarding-card textarea {
   width: 100%;
