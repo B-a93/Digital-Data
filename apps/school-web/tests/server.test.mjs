@@ -58,6 +58,15 @@ test('student admissions remain pending until a school administrator approves th
  assert.match(product,/D3,000/);
  assert.match(product,/D5,000/);
 });
+test('platform owner can delete only an unused pending school registration',async()=>{
+ const [server,app]=await Promise.all([
+  readFile('apps/school-web/server.mjs','utf8'),
+  readFile('apps/school-web/public/app.js','utf8'),
+ ]);
+ assert.match(server,/school\?\.status === "pending" && !school\.accepted_at && !school\.has_users/);
+ assert.match(app,/Delete pending workspace/);
+ assert.match(app,/Pending workspace and invitation deleted/);
+});
 test('onboarding displays a clear validation error instead of silently stopping',async()=>{
  const [html,script]=await Promise.all([
   readFile('apps/school-web/public/onboarding.html','utf8'),

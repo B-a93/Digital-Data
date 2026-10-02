@@ -306,7 +306,7 @@ function platform() {
     if (!["cancelled", "pending_deletion"].includes(school.status))
       return school.status === "active"
         ? "—"
-        : `<button class="text-button resend-invitation" data-id="${esc(school.id)}">Resend invitation</button>`;
+        : `<div class="quick-actions"><button class="text-button resend-invitation" data-id="${esc(school.id)}">Resend invitation</button><button class="text-button delete-school" data-id="${esc(school.id)}" data-name="${esc(school.name)}" data-pending="true">Delete pending workspace</button></div>`;
     const eligible =
       Boolean(school.deletion_requested_at) ||
       (school.retention_until && new Date(school.retention_until) <= new Date());
@@ -1535,7 +1535,9 @@ function wire() {
       (button) =>
         (button.onclick = async () => {
           const confirmation = prompt(
-            `Permanent deletion cannot be undone. Type ${button.dataset.name} to continue.`,
+            button.dataset.pending === "true"
+              ? `This will remove the unused school workspace and its pending invitation. Type ${button.dataset.name} to continue.`
+              : `Permanent deletion cannot be undone. Type ${button.dataset.name} to continue.`,
           );
           if (confirmation !== button.dataset.name) return;
           try {
@@ -1544,7 +1546,7 @@ function wire() {
               body: JSON.stringify({ confirmation }),
             });
             await loadSchools();
-            toast("School workspace and its records were permanently deleted.");
+            toast(button.dataset.pending === "true" ? "Pending workspace and invitation deleted." : "School workspace and its records were permanently deleted.");
           } catch (err) {
             $("#platform-error").textContent = err.message;
           }

@@ -2450,13 +2450,19 @@ const server = http.createServer(async (req, res) => {
           confirmation = String(data.confirmation || "").trim();
         const school = (
           await query(
-            `SELECT id,name,status,retention_until,deletion_requested_at FROM schools WHERE id=$1`,
+            `SELECT s.id,s.name,s.status,s.retention_until,s.deletion_requested_at,
+                    o.accepted_at,
+                    EXISTS(SELECT 1 FROM school_users su WHERE su.school_id=s.id) AS has_users
+             FROM schools s LEFT JOIN school_onboarding o ON o.school_id=s.id
+             WHERE s.id=$1`,
             [schoolLifecycle[1]],
           )
         ).rows[0];
-        const eligible =
+        const pendingUnused =
+            school?.status === "pending" && !school.accepted_at && !school.has_users,
+          eligible =
           school &&
-          (school.deletion_requested_at ||
+          (pendingUnused || school.deletion_requested_at ||
             (school.retention_until && new Date(school.retention_until) <= new Date()));
         if (!eligible || confirmation !== school.name) {
           json(res, 409, {
@@ -2465,11 +2471,12 @@ const server = http.createServer(async (req, res) => {
           return;
         }
         await transaction(async (client) => {
-          await client.query(
-            `UPDATE school_data_deletions SET completed_by=$2,completed_at=now()
-             WHERE school_id=$1 AND completed_at IS NULL`,
-            [school.id, owner.email],
-          );
+          if (!pendingUnused)
+            await client.query(
+              `UPDATE school_data_deletions SET completed_by=$2,completed_at=now()
+               WHERE school_id=$1 AND completed_at IS NULL`,
+              [school.id, owner.email],
+            );
           await client.query(`DELETE FROM schools WHERE id=$1`, [school.id]);
         });
         json(res, 200, { status: "deleted" });
