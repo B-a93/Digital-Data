@@ -14,6 +14,11 @@ const $ = (s) => document.querySelector(s),
   key = "digital-data-school-demo-v1";
 let deferredInstallPrompt = null;
 
+function setText(selector, value) {
+  const element = $(selector);
+  if (element) element.textContent = value;
+}
+
 function initialisePasswordToggles() {
   document.querySelectorAll('input[type="password"]').forEach((input) => {
     if (input.parentElement?.classList.contains("password-control")) return;
@@ -307,10 +312,11 @@ function render() {
         `<a href="#${id}" data-nav="${id}" class="${view === id ? "active" : ""}" ${view === id ? 'aria-current="page"' : ""}><span class="nav-icon" aria-hidden="true">${icon}</span>${label}</a>`,
     )
     .join("");
-  $("#term").textContent = state.settings.term;
-  $("#school-name").textContent = isPlatformOwner
-    ? "Elegant Empire AI"
-    : state.settings.name;
+  setText("#term", state.settings.term);
+  setText(
+    "#school-name",
+    isPlatformOwner ? "Elegant Empire AI" : state.settings.name,
+  );
   $("#content").innerHTML = {
     dashboard,
     students,
@@ -3237,7 +3243,7 @@ async function showPortal(session) {
       : account.user.role === "finance"
         ? "Finance"
         : "Administrator";
-  $("#role").textContent = isPlatformOwner ? "Platform Owner" : role;
+  setText("#role", isPlatformOwner ? "Platform Owner" : role);
   if (activeSchool) {
     state.settings.name = activeSchool.name;
     state.settings.term = activeSchool.term;
@@ -3270,16 +3276,20 @@ async function showPortal(session) {
   }
   const trialActive = activeSchool?.trialStatus === "active";
   $(".demo-banner").hidden = Boolean(activeSchool) && !trialActive;
-  $("#workspace-status").textContent = trialActive ? "FREE TRIAL" : "DEMO";
-  $("#workspace-message").textContent = trialActive
-    ? `Your two-month free trial is active until ${new Date(activeSchool.trialEndsAt).toLocaleDateString("en-GB")}.`
-    : "Secure login is active. This workspace contains demonstration records.";
-  $("#reset").hidden = Boolean(activeSchool);
+  setText("#workspace-status", trialActive ? "FREE TRIAL" : "DEMO");
+  setText(
+    "#workspace-message",
+    trialActive
+      ? `Your two-month free trial is active until ${new Date(activeSchool.trialEndsAt).toLocaleDateString("en-GB")}.`
+      : "Secure login is active. This workspace contains demonstration records.",
+  );
+  const resetButton = $("#reset");
+  if (resetButton) resetButton.hidden = Boolean(activeSchool);
   authScreen.hidden = true;
   authScreen.style.display = "none";
   layout.hidden = false;
   layout.style.display = "";
-  $("#signed-in-user").textContent = email || "Signed in";
+  setText("#signed-in-user", email || "Signed in");
   render();
   if (isPlatformOwner) loadSchools();
   if (storageWarning)
@@ -3293,7 +3303,7 @@ function showLogin(message = "") {
   authScreen.hidden = false;
   authScreen.style.display = "grid";
   showAuthPanel("login-panel");
-  $("#login-error").textContent = message;
+  setText("#login-error", message);
 }
 async function initializeAuth() {
   const params = new URLSearchParams(location.search),
@@ -3337,7 +3347,7 @@ async function initializeAuth() {
 }
 $("#login-form").onsubmit = async (e) => {
   e.preventDefault();
-  const button = e.target.querySelector("button"),
+  const button = e.target.querySelector('button[type="submit"], button:not([type])'),
     error = $("#login-error"),
     form = new FormData(e.target);
   error.textContent = "";
