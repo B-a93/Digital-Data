@@ -428,6 +428,27 @@ label {
 .field textarea {
   width: 100%;
 }
+.mobile-file-input {
+  position: absolute;
+  width: 1px !important;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.file-picker-button {
+  cursor: pointer;
+  text-align: center;
+  width: fit-content;
+}
+.selected-file-name {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .field textarea {
   padding: 10px 12px;
   color: #304b40;

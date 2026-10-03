@@ -67,6 +67,16 @@ test('platform owner can delete only an unused pending school registration',asyn
  assert.match(app,/Delete pending workspace/);
  assert.match(app,/Pending workspace and invitation deleted/);
 });
+test('student import has a mobile-friendly file picker and empty-file validation',async()=>{
+ const [app,style]=await Promise.all([
+  readFile('apps/school-web/public/app.js','utf8'),
+  readFile('apps/school-web/public/style.css','utf8'),
+ ]);
+ assert.match(app,/Choose CSV file/);
+ assert.match(app,/Choose a completed CSV file first/);
+ assert.match(app,/importInput\.files\?\.\[0\]\?\.name/);
+ assert.match(style,/\.mobile-file-input/);
+});
 test('onboarding displays a clear validation error instead of silently stopping',async()=>{
  const [html,script]=await Promise.all([
   readFile('apps/school-web/public/onboarding.html','utf8'),

@@ -1734,12 +1734,32 @@ function wire() {
       );
     };
     $("#student-template").onclick = downloadStudentTemplate;
+    const importInput = $("#student-import-file");
+    importInput.classList.add("mobile-file-input");
+    importInput.insertAdjacentHTML(
+      "beforebegin",
+      '<label class="button secondary file-picker-button" for="student-import-file">Choose CSV file</label>',
+    );
+    importInput.insertAdjacentHTML(
+      "afterend",
+      '<span class="selected-file-name" id="student-import-file-name" aria-live="polite">No file selected</span>',
+    );
+    importInput.onchange = () => {
+      $("#student-import-file-name").textContent =
+        importInput.files?.[0]?.name || "No file selected";
+      $("#student-import-error").textContent = "";
+    };
     $("#student-import-form").onsubmit = async (e) => {
       e.preventDefault();
       const button = e.target.querySelector("button[type=submit]"),
         error = $("#student-import-error"),
         file = new FormData(e.target).get("file");
       error.textContent = "";
+      if (!(file instanceof File) || !file.size) {
+        error.textContent = "Choose a completed CSV file first.";
+        importInput.focus();
+        return;
+      }
       button.disabled = true;
       try {
         const rows = parseCsvText(await file.text());
