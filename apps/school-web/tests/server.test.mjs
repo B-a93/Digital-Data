@@ -72,12 +72,14 @@ test('student import has a mobile-friendly file picker and empty-file validation
   readFile('apps/school-web/public/app.js','utf8'),
   readFile('apps/school-web/public/style.css','utf8'),
  ]);
- assert.match(app,/Browse phone files/);
+ assert.match(app,/Select CSV from phone/);
  assert.match(app,/Choose a completed CSV file first/);
- assert.match(app,/importInput\.files\?\.\[0\]\?\.name/);
+ assert.match(app,/selectedFile\?\.name/);
  assert.match(app,/importInput\.showPicker/);
  assert.match(app,/removeAttribute\("accept"\)/);
  assert.match(style,/\.mobile-file-native/);
+ assert.match(style,/\.import-steps/);
+ assert.match(app,/Import selected students/);
 });
 test('onboarding displays a clear validation error instead of silently stopping',async()=>{
  const [html,script]=await Promise.all([

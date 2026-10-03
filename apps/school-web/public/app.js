@@ -1736,22 +1736,40 @@ function wire() {
           : "Fictional student added. No fee charge created automatically.",
       );
     };
-    $("#student-template").onclick = downloadStudentTemplate;
+    const importPanel = $("#student-import-panel"),
+      templateButton = $("#student-template"),
+      importButton = $("#student-import-form button[type=submit]");
+    importPanel.querySelector(".panel-heading").insertAdjacentHTML(
+      "afterend",
+      '<ol class="import-steps"><li><strong>Download the template</strong><span>Open it in Excel or Google Sheets and add the students.</span></li><li><strong>Save it as a CSV file</strong><span>Choose CSV, not XLSX, when saving.</span></li><li><strong>Select and import</strong><span>Choose the saved file below, then import the students.</span></li></ol>',
+    );
+    templateButton.textContent = "1. Download CSV template";
+    templateButton.onclick = downloadStudentTemplate;
+    importButton.textContent = "3. Import selected students";
+    importButton.disabled = true;
     const importInput = $("#student-import-file");
     importInput.removeAttribute("accept");
     importInput.classList.add("mobile-file-native");
     importInput.insertAdjacentHTML(
       "beforebegin",
-      '<button class="button secondary file-picker-button" id="student-file-picker" type="button">Browse phone files</button>',
+      '<button class="button secondary file-picker-button" id="student-file-picker" type="button">2. Select CSV from phone</button>',
     );
     importInput.insertAdjacentHTML(
       "afterend",
       '<span class="selected-file-name" id="student-import-file-name" aria-live="polite">No file selected</span>',
     );
     importInput.onchange = () => {
-      $("#student-import-file-name").textContent =
-        importInput.files?.[0]?.name || "No file selected";
-      $("#student-import-error").textContent = "";
+      const selectedFile = importInput.files?.[0],
+        fileName = selectedFile?.name || "";
+      $("#student-import-file-name").textContent = selectedFile
+        ? `Ready to import: ${fileName}`
+        : "No file selected";
+      $("#student-import-file-name").classList.toggle("ready", Boolean(selectedFile));
+      $("#student-import-error").textContent =
+        selectedFile && !/\.csv$/i.test(fileName)
+          ? "This does not look like a CSV file. In Excel, choose Save As → CSV, then select it again."
+          : "";
+      importButton.disabled = !selectedFile || !/\.csv$/i.test(fileName);
     };
     $("#student-file-picker").onclick = () => {
       try {
@@ -1773,6 +1791,7 @@ function wire() {
         return;
       }
       button.disabled = true;
+      button.textContent = "Importing students…";
       try {
         const rows = parseCsvText(await file.text());
         if (rows.length < 2)
@@ -1822,6 +1841,7 @@ function wire() {
       } catch (err) {
         error.textContent = err.message;
         button.disabled = false;
+        button.textContent = "3. Import selected students";
       }
     };
     document.querySelectorAll(".edit-student").forEach(
