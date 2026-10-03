@@ -16,7 +16,10 @@ let deferredInstallPrompt = null;
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/service-worker.js").catch(() => {});
+    navigator.serviceWorker
+      .register("/service-worker.js", { updateViaCache: "none" })
+      .then((registration) => registration.update())
+      .catch(() => {});
   });
 }
 
@@ -1735,10 +1738,11 @@ function wire() {
     };
     $("#student-template").onclick = downloadStudentTemplate;
     const importInput = $("#student-import-file");
-    importInput.classList.add("mobile-file-input");
+    importInput.removeAttribute("accept");
+    importInput.classList.add("mobile-file-native");
     importInput.insertAdjacentHTML(
       "beforebegin",
-      '<label class="button secondary file-picker-button" for="student-import-file">Choose CSV file</label>',
+      '<button class="button secondary file-picker-button" id="student-file-picker" type="button">Browse phone files</button>',
     );
     importInput.insertAdjacentHTML(
       "afterend",
@@ -1748,6 +1752,14 @@ function wire() {
       $("#student-import-file-name").textContent =
         importInput.files?.[0]?.name || "No file selected";
       $("#student-import-error").textContent = "";
+    };
+    $("#student-file-picker").onclick = () => {
+      try {
+        if (typeof importInput.showPicker === "function") importInput.showPicker();
+        else importInput.click();
+      } catch {
+        importInput.click();
+      }
     };
     $("#student-import-form").onsubmit = async (e) => {
       e.preventDefault();
