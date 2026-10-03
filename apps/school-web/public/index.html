@@ -240,7 +240,7 @@
       </div>
     </section>
     <div class="layout" hidden>
-      <aside class="sidebar">
+      <aside class="sidebar" id="portal-sidebar">
         <a class="brand" href="#dashboard"
           ><span class="brand-icon">S</span
           ><span
@@ -255,8 +255,18 @@
           <small>Development workspace</small>
         </div>
       </aside>
+      <button class="menu-overlay" id="menu-overlay" type="button" aria-label="Close menu"></button>
       <div class="main">
         <header>
+          <button
+            id="mobile-menu"
+            class="mobile-menu-button"
+            type="button"
+            aria-controls="portal-sidebar"
+            aria-expanded="false"
+          >
+            <span aria-hidden="true">☰</span> Menu
+          </button>
           <div>
             <span class="eyebrow">SCHOOL MANAGEMENT PORTAL</span>
             <div id="term"></div>

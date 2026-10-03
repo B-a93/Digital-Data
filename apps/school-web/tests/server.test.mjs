@@ -81,6 +81,20 @@ test('student import has a mobile-friendly file picker and empty-file validation
  assert.match(style,/\.import-steps/);
  assert.match(app,/Import selected students/);
 });
+test('portal has mobile navigation and role-based dashboard shortcuts',async()=>{
+ const [html,app,style]=await Promise.all([
+  readFile('apps/school-web/public/index.html','utf8'),
+  readFile('apps/school-web/public/app.js','utf8'),
+  readFile('apps/school-web/public/style.css','utf8'),
+ ]);
+ assert.match(html,/id="mobile-menu"/);
+ assert.match(html,/id="menu-overlay"/);
+ assert.match(app,/function setMobileMenu/);
+ assert.match(app,/What would you like to do\?/);
+ assert.match(app,/Message parents/);
+ assert.match(style,/body\.menu-open \.sidebar/);
+ assert.match(style,/\.shortcut-grid/);
+});
 test('onboarding displays a clear validation error instead of silently stopping',async()=>{
  const [html,script]=await Promise.all([
   readFile('apps/school-web/public/onboarding.html','utf8'),

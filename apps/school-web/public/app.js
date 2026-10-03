@@ -141,6 +141,12 @@ $("#install-app").onclick = async () => {
   deferredInstallPrompt = null;
   $("#install-app").hidden = true;
 };
+$("#mobile-menu").onclick = () =>
+  setMobileMenu(!document.body.classList.contains("menu-open"));
+$("#menu-overlay").onclick = () => setMobileMenu(false);
+window.addEventListener("resize", () => {
+  if (window.innerWidth > 700) setMobileMenu(false);
+});
 function save() {
   try {
     localStorage.setItem(key, JSON.stringify(state));
@@ -262,6 +268,10 @@ function navigate(next) {
   attendanceDraft = null;
   location.hash = next;
   render();
+}
+function setMobileMenu(open) {
+  document.body.classList.toggle("menu-open", open);
+  $("#mobile-menu")?.setAttribute("aria-expanded", String(open));
 }
 function render() {
   view = location.hash.slice(1) || "dashboard";
@@ -558,6 +568,26 @@ function dashboard() {
   const summary = attendanceSummary(
     state.attendance[selectedDate]?.marks || {},
   );
+  const commonActions =
+    role === "Teacher"
+      ? [
+          ["attendance", "✓", "Take attendance", "Mark today’s class attendance"],
+          ["results", "▤", "Enter results", "Record marks and remarks"],
+          ["students", "♙", "Find a student", "Open the student register"],
+        ]
+      : role === "Finance"
+        ? [
+            ["fees", "◈", "Record payment", "Add a fee payment or charge"],
+            ["reports", "↗", "Payment reports", "Print or download balances"],
+            ["students", "♙", "Find a student", "Open the student register"],
+          ]
+        : [
+            ["students", "＋", "Register student", "Add one student or import a list"],
+            ["attendance", "✓", "Take attendance", "Mark today’s attendance"],
+            ["fees", "◈", "Record payment", "Update fees and balances"],
+            ["results", "▤", "Enter results", "Prepare and publish marks"],
+            ["communications", "✉", "Message parents", "Prepare WhatsApp messages"],
+          ];
   const stats = [
     [
       "Total students",
@@ -596,7 +626,7 @@ function dashboard() {
         : "Welcome back. Here’s your fictional school workspace.",
       `<a class="button" href="#students">＋ Add a student</a>`,
     ) +
-    `<div class="cards">${stats.map(([label, n, sub, icon]) => `<div class="card"><div class="card-label">${label}<span class="stat-icon" aria-hidden="true">${icon}</span></div><div class="number">${n}</div><small>${sub}</small></div>`).join("")}</div><div class="grid"><section class="panel"><div class="panel-heading"><h2>Student overview</h2><a class="text-button" href="#students">View all students →</a></div>${table(
+    `<section class="dashboard-shortcuts" aria-labelledby="quick-actions-title"><div class="panel-heading"><div><h2 id="quick-actions-title">What would you like to do?</h2><p>Choose a common task to get started.</p></div></div><div class="shortcut-grid">${commonActions.map(([id, icon, label, help]) => `<a class="shortcut-card" href="#${id}"><span class="shortcut-icon" aria-hidden="true">${icon}</span><span><strong>${label}</strong><small>${help}</small></span><span aria-hidden="true">→</span></a>`).join("")}</div></section><div class="cards">${stats.map(([label, n, sub, icon]) => `<div class="card"><div class="card-label">${label}<span class="stat-icon" aria-hidden="true">${icon}</span></div><div class="number">${n}</div><small>${sub}</small></div>`).join("")}</div><div class="grid"><section class="panel"><div class="panel-heading"><h2>Student overview</h2><a class="text-button" href="#students">View all students →</a></div>${table(
       ["Student", "Class", "Fee status"],
       state.students
         .slice(0, 5)
@@ -1442,6 +1472,7 @@ function wire() {
     (a) =>
       (a.onclick = (e) => {
         e.preventDefault();
+        setMobileMenu(false);
         navigate(a.dataset.nav);
       }),
   );

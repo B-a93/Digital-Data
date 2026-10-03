@@ -137,6 +137,10 @@ nav a:hover {
   margin-left: 252px;
   width: calc(100% - 252px);
 }
+.mobile-menu-button,
+.menu-overlay {
+  display: none;
+}
 header {
   height: 85px;
   background: #fff;
@@ -374,6 +378,64 @@ tr:last-child td {
   flex-wrap: wrap;
   margin-top: 20px;
 }
+.dashboard-shortcuts {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 22px;
+  padding: 22px;
+}
+.dashboard-shortcuts .panel-heading {
+  margin-bottom: 16px;
+}
+.dashboard-shortcuts .panel-heading p {
+  margin: 5px 0 0;
+}
+.shortcut-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.shortcut-card {
+  align-items: center;
+  background: #f3f8f6;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto 1fr auto;
+  min-height: 76px;
+  padding: 13px;
+}
+.shortcut-card:hover {
+  background: #eaf4ef;
+  border-color: #bfd8ce;
+}
+.shortcut-card strong,
+.shortcut-card small {
+  display: block;
+}
+.shortcut-card strong {
+  color: #173d33;
+  font-size: 12px;
+}
+.shortcut-card small {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+.shortcut-icon {
+  align-items: center;
+  background: #fff;
+  border-radius: 8px;
+  color: var(--green);
+  display: flex;
+  font-size: 18px;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+}
 .note {
   font-size: 11px;
   background: #f2f6f3;
@@ -601,6 +663,9 @@ a:focus-visible {
   .grid {
     grid-template-columns: 1fr;
   }
+  .shortcut-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .brand {
     font-size: 13px;
   }
@@ -613,33 +678,69 @@ a:focus-visible {
     display: block;
   }
   .sidebar {
-    position: static;
-    width: 100%;
-    padding: 16px;
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 0;
+    box-shadow: 18px 0 45px rgba(19, 52, 43, 0.18);
+    inset: 0 auto 0 0;
+    padding: 20px 16px;
+    position: fixed;
+    transform: translateX(-105%);
+    transition: transform 180ms ease;
+    width: min(86vw, 320px);
+    z-index: 60;
+  }
+  body.menu-open {
+    overflow: hidden;
+  }
+  body.menu-open .sidebar {
+    transform: translateX(0);
+  }
+  .menu-overlay {
+    background: rgba(12, 28, 23, 0.46);
+    border: 0;
+    display: block;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    position: fixed;
+    transition: opacity 180ms ease;
+    z-index: 50;
+  }
+  body.menu-open .menu-overlay {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .mobile-menu-button {
+    align-items: center;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: #21483d;
+    display: inline-flex;
+    font-size: 12px;
+    font-weight: 700;
+    gap: 7px;
+    min-height: 44px;
+    padding: 9px 12px;
   }
   .brand {
     font-size: 16px;
   }
-  .nav-label,
-  .sidebar-bottom {
-    display: none;
+  .nav-label {
+    margin-top: 30px;
   }
   nav {
-    display: flex;
-    overflow-x: auto;
-    margin-top: 14px;
-    gap: 5px;
+    display: block;
+    margin-top: 0;
+    overflow: visible;
   }
   nav a {
-    white-space: nowrap;
-    padding: 10px;
-    font-size: 11px;
-    margin: 0;
+    font-size: 14px;
+    margin: 4px 0;
+    min-height: 46px;
+    padding: 12px 14px;
   }
   .nav-icon {
-    display: none;
+    display: inline-block;
   }
   .main {
     margin: 0;
@@ -648,9 +749,14 @@ a:focus-visible {
   header {
     height: 68px;
     padding: 0 18px;
+    position: sticky;
+    top: 0;
+    z-index: 20;
   }
   .header-actions label,
-  .header-actions .avatar {
+  .header-actions .avatar,
+  #signed-in-user,
+  #role {
     display: none;
   }
   .demo-banner {
@@ -692,8 +798,9 @@ a:focus-visible {
     flex-wrap: wrap;
   }
   .button {
-    padding: 10px 12px;
-    font-size: 11px;
+    font-size: 12px;
+    min-height: 44px;
+    padding: 11px 14px;
   }
   footer {
     padding: 17px;
@@ -710,6 +817,15 @@ a:focus-visible {
     left: 18px;
     right: 18px;
     bottom: 18px;
+  }
+  .shortcut-grid {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-shortcuts {
+    padding: 16px;
+  }
+  .shortcut-card {
+    min-height: 68px;
   }
 }
 [hidden] {
