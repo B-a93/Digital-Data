@@ -105,6 +105,7 @@ test('all password fields receive accessible show and hide controls',async()=>{
  assert.match(app,/aria-pressed/);
  assert.match(style,/\.password-control/);
  assert.match(style,/\.password-toggle/);
+ assert.match(app,/button\[type="submit"\], button:not\(\[type\]\)/);
 });
 test('administrator dashboard includes a guided school setup checklist',async()=>{
  const [app,style]=await Promise.all([
