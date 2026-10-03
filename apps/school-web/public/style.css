@@ -490,6 +490,30 @@ label {
 .field textarea {
   width: 100%;
 }
+.password-control {
+  position: relative;
+  width: 100%;
+}
+.password-control input {
+  padding-right: 64px;
+}
+.password-toggle {
+  background: transparent;
+  border: 0;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 700;
+  min-height: 38px;
+  padding: 0 12px;
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.password-toggle:hover {
+  background: #f1f7f4;
+  border-radius: 6px;
+}
 .mobile-file-native {
   background: #f7faf8;
   min-height: 48px;

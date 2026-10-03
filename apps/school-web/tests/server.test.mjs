@@ -95,6 +95,17 @@ test('portal has mobile navigation and role-based dashboard shortcuts',async()=>
  assert.match(style,/body\.menu-open \.sidebar/);
  assert.match(style,/\.shortcut-grid/);
 });
+test('all password fields receive accessible show and hide controls',async()=>{
+ const [app,style]=await Promise.all([
+  readFile('apps/school-web/public/app.js','utf8'),
+  readFile('apps/school-web/public/style.css','utf8'),
+ ]);
+ assert.match(app,/function initialisePasswordToggles/);
+ assert.match(app,/button\.textContent = visible \? "Show" : "Hide"/);
+ assert.match(app,/aria-pressed/);
+ assert.match(style,/\.password-control/);
+ assert.match(style,/\.password-toggle/);
+});
 test('onboarding displays a clear validation error instead of silently stopping',async()=>{
  const [html,script]=await Promise.all([
   readFile('apps/school-web/public/onboarding.html','utf8'),

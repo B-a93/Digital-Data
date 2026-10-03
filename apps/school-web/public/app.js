@@ -14,6 +14,31 @@ const $ = (s) => document.querySelector(s),
   key = "digital-data-school-demo-v1";
 let deferredInstallPrompt = null;
 
+function initialisePasswordToggles() {
+  document.querySelectorAll('input[type="password"]').forEach((input) => {
+    if (input.parentElement?.classList.contains("password-control")) return;
+    const wrapper = document.createElement("div"),
+      button = document.createElement("button");
+    wrapper.className = "password-control";
+    input.parentNode.insertBefore(wrapper, input);
+    wrapper.appendChild(input);
+    button.type = "button";
+    button.className = "password-toggle";
+    button.textContent = "Show";
+    button.setAttribute("aria-label", "Show password");
+    button.setAttribute("aria-pressed", "false");
+    button.onclick = () => {
+      const visible = input.type === "text";
+      input.type = visible ? "password" : "text";
+      button.textContent = visible ? "Show" : "Hide";
+      button.setAttribute("aria-label", visible ? "Show password" : "Hide password");
+      button.setAttribute("aria-pressed", String(!visible));
+    };
+    wrapper.appendChild(button);
+  });
+}
+initialisePasswordToggles();
+
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker
