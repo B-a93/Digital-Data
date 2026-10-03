@@ -436,6 +436,104 @@ tr:last-child td {
   justify-content: center;
   width: 36px;
 }
+.setup-checklist {
+  background: #173d33;
+  border-radius: 14px;
+  color: #fff;
+  margin-bottom: 22px;
+  padding: 24px;
+}
+.setup-heading {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+.setup-heading .eyebrow,
+.setup-heading p {
+  color: #c8ddd5;
+}
+.setup-heading h2 {
+  color: #fff;
+  font-size: 20px;
+  margin: 7px 0 5px;
+}
+.setup-heading p {
+  margin: 0;
+}
+.setup-heading > strong {
+  font-size: 24px;
+}
+.setup-progress {
+  background: #31584d;
+  border-radius: 99px;
+  height: 8px;
+  margin: 18px 0;
+  overflow: hidden;
+}
+.setup-progress span {
+  background: #f2c978;
+  display: block;
+  height: 100%;
+  transition: width 240ms ease;
+}
+.setup-steps {
+  display: grid;
+  gap: 9px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.setup-step {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto 1fr auto;
+  min-height: 68px;
+  padding: 12px;
+}
+.setup-step:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+.setup-step.complete {
+  background: rgba(159, 211, 188, 0.12);
+}
+.setup-status {
+  align-items: center;
+  background: #fff;
+  border-radius: 50%;
+  color: #173d33;
+  display: flex;
+  font-size: 11px;
+  font-weight: 800;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+.setup-step.complete .setup-status {
+  background: #bce2d1;
+  color: #12543f;
+}
+.setup-step strong,
+.setup-step small {
+  display: block;
+}
+.setup-step strong {
+  color: #fff;
+  font-size: 12px;
+}
+.setup-step small {
+  color: #c8ddd5;
+  font-size: 9px;
+  line-height: 1.4;
+  margin-top: 3px;
+}
+.setup-action {
+  color: #f2d397;
+  font-size: 10px;
+  font-weight: 700;
+}
 .note {
   font-size: 11px;
   background: #f2f6f3;
@@ -844,6 +942,18 @@ a:focus-visible {
   }
   .shortcut-grid {
     grid-template-columns: 1fr;
+  }
+  .setup-checklist {
+    padding: 18px;
+  }
+  .setup-steps {
+    grid-template-columns: 1fr;
+  }
+  .setup-heading h2 {
+    font-size: 17px;
+  }
+  .setup-heading > strong {
+    font-size: 19px;
   }
   .dashboard-shortcuts {
     padding: 16px;

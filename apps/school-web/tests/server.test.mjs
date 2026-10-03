@@ -106,6 +106,20 @@ test('all password fields receive accessible show and hide controls',async()=>{
  assert.match(style,/\.password-control/);
  assert.match(style,/\.password-toggle/);
 });
+test('administrator dashboard includes a guided school setup checklist',async()=>{
+ const [app,style]=await Promise.all([
+  readFile('apps/school-web/public/app.js','utf8'),
+  readFile('apps/school-web/public/style.css','utf8'),
+ ]);
+ assert.match(app,/function schoolSetupChecklist/);
+ assert.match(app,/steps completed/);
+ assert.match(app,/Add classes/);
+ assert.match(app,/Configure fee types/);
+ assert.match(app,/Invite staff/);
+ assert.match(app,/role="progressbar"/);
+ assert.match(style,/\.setup-checklist/);
+ assert.match(style,/\.setup-steps/);
+});
 test('onboarding displays a clear validation error instead of silently stopping',async()=>{
  const [html,script]=await Promise.all([
   readFile('apps/school-web/public/onboarding.html','utf8'),

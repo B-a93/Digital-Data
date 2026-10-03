@@ -583,6 +583,50 @@ async function loadTimetable(className = timetableClass) {
     )
   ).entries;
 }
+function schoolSetupChecklist() {
+  if (!schoolDataLive || role !== "Administrator") return "";
+  const steps = [
+      {
+        label: "Confirm school settings",
+        help: "Check the school name, term and pass mark.",
+        complete: Boolean(state.settings.name && state.settings.term && Number.isFinite(Number(state.settings.pass))),
+        page: "settings",
+      },
+      {
+        label: "Add classes",
+        help: "Create the classes or grade levels used by the school.",
+        complete: schoolClasses().length > 0,
+        page: "settings",
+      },
+      {
+        label: "Add subjects",
+        help: "Add subjects before teachers begin entering results.",
+        complete: state.settings.subjects.length > 0,
+        page: "settings",
+      },
+      {
+        label: "Register students",
+        help: "Add one student or import the existing register.",
+        complete: state.students.length > 0,
+        page: "students",
+      },
+      {
+        label: "Configure fee types",
+        help: "Add tuition and any other school charges.",
+        complete: state.settings.feeTypes.length > 0,
+        page: "settings",
+      },
+      {
+        label: "Invite staff",
+        help: "Give teachers or finance staff the correct access.",
+        complete: schoolStaff.length > 0,
+        page: "staff",
+      },
+    ],
+    completed = steps.filter((step) => step.complete).length,
+    percent = Math.round((completed / steps.length) * 100);
+  return `<section class="setup-checklist"><div class="setup-heading"><div><span class="eyebrow">GETTING STARTED</span><h2>${completed === steps.length ? "Your school setup is complete" : "Finish setting up your school"}</h2><p>${completed} of ${steps.length} steps completed</p></div><strong>${percent}%</strong></div><div class="setup-progress" role="progressbar" aria-label="School setup progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><span style="width:${percent}%"></span></div><div class="setup-steps">${steps.map((step, index) => `<a href="#${step.page}" class="setup-step ${step.complete ? "complete" : ""}"><span class="setup-status" aria-hidden="true">${step.complete ? "✓" : index + 1}</span><span><strong>${esc(step.label)}</strong><small>${esc(step.help)}</small></span><span class="setup-action">${step.complete ? "Review" : "Start"} →</span></a>`).join("")}</div></section>`;
+}
 function dashboard() {
   const charges = state.charges.reduce((s, c) => s + c.amount, 0),
     paid = state.payments.reduce((s, p) => s + p.amount, 0),
@@ -651,7 +695,7 @@ function dashboard() {
         : "Welcome back. Here’s your fictional school workspace.",
       `<a class="button" href="#students">＋ Add a student</a>`,
     ) +
-    `<section class="dashboard-shortcuts" aria-labelledby="quick-actions-title"><div class="panel-heading"><div><h2 id="quick-actions-title">What would you like to do?</h2><p>Choose a common task to get started.</p></div></div><div class="shortcut-grid">${commonActions.map(([id, icon, label, help]) => `<a class="shortcut-card" href="#${id}"><span class="shortcut-icon" aria-hidden="true">${icon}</span><span><strong>${label}</strong><small>${help}</small></span><span aria-hidden="true">→</span></a>`).join("")}</div></section><div class="cards">${stats.map(([label, n, sub, icon]) => `<div class="card"><div class="card-label">${label}<span class="stat-icon" aria-hidden="true">${icon}</span></div><div class="number">${n}</div><small>${sub}</small></div>`).join("")}</div><div class="grid"><section class="panel"><div class="panel-heading"><h2>Student overview</h2><a class="text-button" href="#students">View all students →</a></div>${table(
+    `<section class="dashboard-shortcuts" aria-labelledby="quick-actions-title"><div class="panel-heading"><div><h2 id="quick-actions-title">What would you like to do?</h2><p>Choose a common task to get started.</p></div></div><div class="shortcut-grid">${commonActions.map(([id, icon, label, help]) => `<a class="shortcut-card" href="#${id}"><span class="shortcut-icon" aria-hidden="true">${icon}</span><span><strong>${label}</strong><small>${help}</small></span><span aria-hidden="true">→</span></a>`).join("")}</div></section>${schoolSetupChecklist()}<div class="cards">${stats.map(([label, n, sub, icon]) => `<div class="card"><div class="card-label">${label}<span class="stat-icon" aria-hidden="true">${icon}</span></div><div class="number">${n}</div><small>${sub}</small></div>`).join("")}</div><div class="grid"><section class="panel"><div class="panel-heading"><h2>Student overview</h2><a class="text-button" href="#students">View all students →</a></div>${table(
       ["Student", "Class", "Fee status"],
       state.students
         .slice(0, 5)
