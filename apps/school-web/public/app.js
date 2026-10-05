@@ -117,7 +117,9 @@ let view = "dashboard",
   schoolStaff = [],
   schoolActivity = [],
   schoolProgrammes = [],
-  admissionApplications = [];
+  admissionApplications = [],
+  platformBilling = { schools: [], payments: [] },
+  billingFilter = "all";
 let resultTerms = [state.settings.term];
 let timetableEntries = [];
 let attendanceDraft = null;
@@ -204,7 +206,11 @@ const navItems = [
 ];
 const visibleNav = () =>
   isPlatformOwner
-    ? [["platform", "◆", "School onboarding"], ...navItems]
+    ? [
+        ["platform", "◆", "School onboarding"],
+        ["platform-billing", "◈", "Billing & subscriptions"],
+        ...navItems,
+      ]
     : !schoolDataLive || role === "Administrator"
       ? navItems
       : role === "Teacher"
@@ -331,6 +337,7 @@ function render() {
     activity,
     settings,
     platform,
+    "platform-billing": platformBillingPage,
   }[view]();
   wire();
 }
@@ -372,6 +379,77 @@ function platform() {
     `<div class="stack"><section class="panel"><div class="panel-heading"><h2>Create an education workspace</h2><span class="badge gray">Platform Owner</span></div><form id="school-onboarding-form"><div class="form-grid"><div class="field"><label>Organisation name</label><input name="name" maxlength="100" required></div><div class="field"><label>Organisation code</label><input name="slug" maxlength="60" pattern="[-a-z0-9]{3,60}" placeholder="e.g. brikama-skills-centre" required></div><div class="field"><label>Organisation type</label><select name="schoolType">${organisationTypes.map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></div><div class="field"><label>Region</label><input name="region" maxlength="80"></div><div class="field"><label>District</label><input name="district" maxlength="80"></div><div class="field"><label>Administrator name</label><input name="administratorName" maxlength="100" required></div><div class="field"><label>Administrator email</label><input name="administratorEmail" type="email" required></div></div><div class="form-actions"><button class="button">Create workspace and send invitation</button></div><div id="platform-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Education workspaces</h2><button id="refresh-schools" class="text-button">Refresh</button></div>${table(["Organisation", "Type", "Administrator", "Status", "Action"], platformSchools.map((s) => `<tr><td>${esc(s.name)}<span class="sub">${esc(s.slug)}</span></td><td>${esc(typeLabel(s.school_type))}</td><td>${esc(s.administrator_name || "—")}<span class="sub">${esc(s.administrator_email || "")}</span></td><td><span class="badge ${s.status === "active" ? "" : "amber"}">${esc(s.status)}</span><span class="sub">${esc(lifecycleNote(s))}</span></td><td>${lifecycleAction(s)}</td></tr>`).join(""))}</section></div>`
   );
 }
+const platformSchoolCount = (school) =>
+  Number(school.student_count || school.estimated_student_count || 0);
+function platformPlan(school) {
+  const count = platformSchoolCount(school);
+  return count <= 300
+    ? { name: "Small", amount: 150000 }
+    : count <= 1000
+      ? { name: "Standard", amount: 300000 }
+      : { name: "Large", amount: 500000 };
+}
+function platformBillingStatus(school) {
+  if (["cancelled", "pending_deletion"].includes(school.status))
+    return school.status;
+  if (school.status === "pending") return "pending";
+  if (school.billing_status === "suspended" || school.status === "suspended")
+    return "suspended";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (
+    school.subscription_paid_until &&
+    new Date(school.subscription_paid_until) >= today
+  )
+    return "paid";
+  if (
+    school.trial_status === "active" &&
+    school.trial_ends_at &&
+    new Date(school.trial_ends_at) >= today
+  )
+    return "trial";
+  return "overdue";
+}
+const billingStatusLabel = (status) =>
+  ({
+    trial: "Free trial",
+    paid: "Paid & active",
+    overdue: "Payment overdue",
+    suspended: "Suspended",
+    pending: "Pending onboarding",
+    cancelled: "Cancelled",
+    pending_deletion: "Data retention",
+  })[status] || status;
+const platformDate = (value) =>
+  value ? new Date(value).toLocaleDateString("en-GB") : "—";
+function platformBillingPage() {
+  const schools = platformBilling.schools.map((school) => ({
+      ...school,
+      billingState: platformBillingStatus(school),
+    })),
+    shown = schools.filter(
+      (school) => billingFilter === "all" || school.billingState === billingFilter,
+    ),
+    totals = Object.fromEntries(
+      ["trial", "paid", "overdue", "suspended"].map((status) => [
+        status,
+        schools.filter((school) => school.billingState === status).length,
+      ]),
+    ),
+    payable = schools.filter((school) =>
+      ["active", "suspended"].includes(school.status),
+    );
+  return (
+    heading(
+      "Billing and subscriptions",
+      "Monitor trials, record payments and control school access.",
+    ) +
+    `<div class="cards billing-summary"><div class="card"><div class="card-label">Free trials</div><div class="number">${totals.trial}</div></div><div class="card"><div class="card-label">Paid & active</div><div class="number">${totals.paid}</div></div><div class="card"><div class="card-label">Payment overdue</div><div class="number">${totals.overdue}</div></div><div class="card"><div class="card-label">Suspended</div><div class="number">${totals.suspended}</div></div></div>
+    <div class="stack"><section class="panel"><div class="panel-heading"><div><h2>Record a school payment</h2><p>Confirm cash, Wave, bank transfer, card or another verified payment.</p></div><span class="badge gray">Platform owner only</span></div><form id="subscription-payment-form"><div class="form-grid"><div class="field"><label for="billing-school">School</label><select id="billing-school" name="schoolId" required>${payable.map((school) => `<option value="${esc(school.id)}">${esc(school.name)} · ${esc(platformPlan(school).name)} (${money(platformPlan(school).amount)}/month)</option>`).join("")}</select></div><div class="field"><label for="billing-amount">Amount received (dalasi)</label><input id="billing-amount" name="amount" inputmode="decimal" placeholder="1500.00" required></div><div class="field"><label for="billing-method">Payment method</label><select id="billing-method" name="paymentMethod"><option value="cash">Cash</option><option value="wave">Wave</option><option value="bank_transfer">Bank transfer</option><option value="card">Card</option><option value="other">Other</option></select></div><div class="field"><label for="billing-reference">Payment reference (optional)</label><input id="billing-reference" name="reference" maxlength="100" placeholder="Wave or bank reference"></div><div class="field"><label for="billing-date">Payment date</label><input id="billing-date" name="paidOn" type="date" value="${localDate()}" required></div><div class="field"><label for="billing-months">Months covered</label><input id="billing-months" name="coverageMonths" type="number" min="1" max="24" value="1" required></div></div><div class="form-actions"><button class="button" ${payable.length ? "" : "disabled"}>Record payment</button></div><div id="billing-error" class="error" role="alert"></div></form></section>
+    <section class="panel"><div class="panel-heading"><div><h2>School subscription status</h2><p>${shown.length} of ${schools.length} schools shown</p></div><div class="toolbar"><label for="billing-filter">Filter</label><select id="billing-filter"><option value="all">All schools</option>${["trial", "paid", "overdue", "suspended", "pending", "cancelled", "pending_deletion"].map((status) => `<option value="${status}" ${billingFilter === status ? "selected" : ""}>${billingStatusLabel(status)}</option>`).join("")}</select><button id="refresh-billing" class="text-button">Refresh</button></div></div>${table(["School", "Plan", "Trial / paid until", "Last payment", "Status", "Action"], shown.map((school) => { const plan = platformPlan(school), status = school.billingState; return `<tr><td><span class="student-name">${esc(school.name)}</span><span class="sub">${platformSchoolCount(school)} students · ${esc(school.administrator_email || "")}</span></td><td>${esc(plan.name)}<span class="sub">${money(plan.amount)}/month</span></td><td>${status === "trial" ? `Trial: ${platformDate(school.trial_ends_at)}` : `Paid: ${platformDate(school.subscription_paid_until)}`}</td><td>${school.last_payment_date ? `${money(Number(school.last_payment_amount))}<span class="sub">${platformDate(school.last_payment_date)} · ${esc(String(school.last_payment_method || "").replaceAll("_", " "))}</span>` : "—"}</td><td><span class="badge ${["overdue", "suspended", "cancelled", "pending_deletion"].includes(status) ? "amber" : ""}">${esc(billingStatusLabel(status))}</span></td><td>${["active", "suspended"].includes(school.status) ? `<button class="text-button billing-access" data-id="${esc(school.id)}" data-name="${esc(school.name)}" data-action="${status === "suspended" ? "reactivate" : "suspend"}">${status === "suspended" ? "Reactivate" : "Suspend"}</button>` : "—"}</td></tr>`; }).join(""))}</section>
+    <section class="panel"><div class="panel-heading"><h2>Recent subscription payments</h2><small>Latest ${platformBilling.payments.length}</small></div>${table(["Date", "School", "Amount", "Method / reference", "Coverage"], platformBilling.payments.map((payment) => `<tr><td>${platformDate(payment.paid_on)}</td><td>${esc(payment.school_name)}</td><td>${money(Number(payment.amount_bututs))}</td><td>${esc(String(payment.payment_method).replaceAll("_", " "))}<span class="sub">${esc(payment.payment_reference || "No reference")}</span></td><td>${payment.coverage_months} month${payment.coverage_months === 1 ? "" : "s"}<span class="sub">Until ${platformDate(payment.coverage_ends_on)}</span></td></tr>`).join(""))}</section></div>`
+  );
+}
 async function platformApi(path, options = {}) {
   accessToken = await authenticatedToken();
   let response = await fetch(path, {
@@ -403,6 +481,14 @@ async function loadSchools() {
     if (view === "platform") render();
   } catch (err) {
     if (view === "platform") $("#platform-error").textContent = err.message;
+  }
+}
+async function loadPlatformBilling() {
+  try {
+    platformBilling = await platformApi("/api/platform/billing");
+    if (view === "platform-billing") render();
+  } catch (err) {
+    if (view === "platform-billing") setText("#billing-error", err.message);
   }
 }
 const isTrainingOrganisation = () =>
@@ -1584,6 +1670,64 @@ function wire() {
       paid = state.payments.reduce((s, p) => s + p.amount, 0);
     $("#fee-bar").style.width =
       (charges ? Math.min(100, (paid / charges) * 100) : 0) + "%";
+  }
+  if (view === "platform-billing") {
+    $("#refresh-billing").onclick = loadPlatformBilling;
+    $("#billing-filter").onchange = (event) => {
+      billingFilter = event.target.value;
+      render();
+    };
+    $("#billing-school").onchange = (event) => {
+      const school = platformBilling.schools.find(
+        (item) => item.id === event.target.value,
+      );
+      if (school) $("#billing-amount").value = (platformPlan(school).amount / 100).toFixed(2);
+    };
+    $("#subscription-payment-form").onsubmit = async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget,
+        button = form.querySelector(".button"),
+        data = Object.fromEntries(new FormData(form));
+      setText("#billing-error", "");
+      button.disabled = true;
+      button.textContent = "Recording payment…";
+      try {
+        await platformApi("/api/platform/billing/payments", {
+          method: "POST",
+          body: JSON.stringify(data),
+        });
+        await loadPlatformBilling();
+        toast("Subscription payment recorded and school access updated.");
+      } catch (err) {
+        setText("#billing-error", err.message);
+        button.disabled = false;
+        button.textContent = "Record payment";
+      }
+    };
+    document.querySelectorAll(".billing-access").forEach(
+      (button) =>
+        (button.onclick = async () => {
+          const action = button.dataset.action;
+          if (!confirm(`${action === "suspend" ? "Suspend" : "Reactivate"} access for ${button.dataset.name}?`)) return;
+          button.disabled = true;
+          try {
+            await platformApi(`/api/platform/billing/schools/${button.dataset.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ action }),
+            });
+            await loadPlatformBilling();
+            toast(`School access ${action === "suspend" ? "suspended" : "reactivated"}.`);
+          } catch (err) {
+            setText("#billing-error", err.message);
+            button.disabled = false;
+          }
+        }),
+    );
+    const selected = platformBilling.schools.find(
+      (school) => ["active", "suspended"].includes(school.status),
+    );
+    if (selected && !$("#billing-amount").value)
+      $("#billing-amount").value = (platformPlan(selected).amount / 100).toFixed(2);
   }
   if (view === "platform") {
     $("#refresh-schools").onclick = loadSchools;
@@ -3291,7 +3435,10 @@ async function showPortal(session) {
   layout.style.display = "";
   setText("#signed-in-user", email || "Signed in");
   render();
-  if (isPlatformOwner) loadSchools();
+  if (isPlatformOwner) {
+    loadSchools();
+    loadPlatformBilling();
+  }
   if (storageWarning)
     toast("Stored demo data could not be read; fictional examples loaded.");
 }
