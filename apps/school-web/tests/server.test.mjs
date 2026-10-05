@@ -121,6 +121,22 @@ test('administrator dashboard includes a guided school setup checklist',async()=
  assert.match(style,/\.setup-checklist/);
  assert.match(style,/\.setup-steps/);
 });
+test('platform owner has subscription billing records and access controls',async()=>{
+ const [server,schema,app]=await Promise.all([
+  readFile('apps/school-web/server.mjs','utf8'),
+  readFile('apps/school-web/database/schema.sql','utf8'),
+  readFile('apps/school-web/public/app.js','utf8'),
+ ]);
+ assert.match(schema,/CREATE TABLE IF NOT EXISTS platform_subscription_payments/);
+ assert.match(schema,/subscription_paid_until date/);
+ assert.match(server,/pathname === "\/api\/platform\/billing"/);
+ assert.match(server,/pathname === "\/api\/platform\/billing\/payments"/);
+ assert.match(server,/requirePlatformOwner\(req\)/);
+ assert.match(app,/Billing & subscriptions/);
+ assert.match(app,/Payment overdue/);
+ assert.match(app,/Record a school payment/);
+ assert.match(app,/billing-access/);
+});
 test('onboarding displays a clear validation error instead of silently stopping',async()=>{
  const [html,script]=await Promise.all([
   readFile('apps/school-web/public/onboarding.html','utf8'),
