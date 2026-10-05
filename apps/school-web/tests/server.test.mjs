@@ -145,6 +145,26 @@ test('platform owner has subscription billing records and access controls',async
  assert.match(app,/Large school/);
  assert.match(app,/Custom price/);
 });
+test('public SEO targets product pages while private workflows stay out of search',async()=>{
+ const [login,product,onboarding,admissions,sitemap,llms]=await Promise.all([
+  readFile('apps/school-web/public/index.html','utf8'),
+  readFile('apps/school-web/public/product.html','utf8'),
+  readFile('apps/school-web/public/onboarding.html','utf8'),
+  readFile('apps/school-web/public/admissions.html','utf8'),
+  readFile('apps/school-web/public/sitemap.xml','utf8'),
+  readFile('apps/school-web/public/llms.txt','utf8'),
+ ]);
+ assert.match(login,/name="robots" content="noindex, follow"/);
+ assert.match(admissions,/name="robots" content="noindex, follow"/);
+ assert.match(product,/"@type": "WebApplication"/);
+ assert.match(product,/"@type": "FAQPage"/);
+ assert.match(product,/"priceCurrency": "GMD"/);
+ assert.match(product,/hreflang="en-GM"/);
+ assert.match(onboarding,/property="og:title"/);
+ assert.doesNotMatch(sitemap,/elegantempireai\.com\/<\/loc>/);
+ assert.doesNotMatch(sitemap,/\/admissions/);
+ assert.match(llms,/Up to 150 students: D750/);
+});
 test('onboarding displays a clear validation error instead of silently stopping',async()=>{
  const [html,script]=await Promise.all([
   readFile('apps/school-web/public/onboarding.html','utf8'),
