@@ -54,9 +54,9 @@ test('student admissions remain pending until a school administrator approves th
  assert.match(server,/status='pending' FOR UPDATE/);
  assert.match(server,/student_admission_applications/);
  assert.match(admissions,/Student registration application/);
- assert.match(product,/D1,500/);
- assert.match(product,/D3,000/);
- assert.match(product,/D5,000/);
+ assert.match(product,/D5/);
+ assert.match(product,/student \/ month/);
+ assert.match(product,/Custom/);
 });
 test('platform owner can delete only an unused pending school registration',async()=>{
  const [server,app]=await Promise.all([
@@ -136,6 +136,9 @@ test('platform owner has subscription billing records and access controls',async
  assert.match(app,/Payment overdue/);
  assert.match(app,/Record a school payment/);
  assert.match(app,/billing-access/);
+ assert.match(app,/count \* 500/);
+ assert.match(app,/Large school/);
+ assert.match(app,/Custom price/);
 });
 test('onboarding displays a clear validation error instead of silently stopping',async()=>{
  const [html,script]=await Promise.all([
