@@ -383,12 +383,12 @@ const platformSchoolCount = (school) =>
   Number(school.student_count || school.estimated_student_count || 0);
 function platformPlan(school) {
   const count = platformSchoolCount(school);
-  return count <= 300
-    ? { name: "Small", amount: 150000 }
-    : count <= 1000
-      ? { name: "Standard", amount: 300000 }
-      : { name: "Large", amount: 500000 };
+  return count > 1000
+    ? { name: "Large school", amount: null, custom: true }
+    : { name: "Per-student", amount: count * 500, custom: false };
 }
+const platformPlanPrice = (plan) =>
+  plan.custom ? "Custom price" : `${money(plan.amount)}/month`;
 function platformBillingStatus(school) {
   if (["cancelled", "pending_deletion"].includes(school.status))
     return school.status;
@@ -445,8 +445,8 @@ function platformBillingPage() {
       "Monitor trials, record payments and control school access.",
     ) +
     `<div class="cards billing-summary"><div class="card"><div class="card-label">Free trials</div><div class="number">${totals.trial}</div></div><div class="card"><div class="card-label">Paid & active</div><div class="number">${totals.paid}</div></div><div class="card"><div class="card-label">Payment overdue</div><div class="number">${totals.overdue}</div></div><div class="card"><div class="card-label">Suspended</div><div class="number">${totals.suspended}</div></div></div>
-    <div class="stack"><section class="panel"><div class="panel-heading"><div><h2>Record a school payment</h2><p>Confirm cash, Wave, bank transfer, card or another verified payment.</p></div><span class="badge gray">Platform owner only</span></div><form id="subscription-payment-form"><div class="form-grid"><div class="field"><label for="billing-school">School</label><select id="billing-school" name="schoolId" required>${payable.map((school) => `<option value="${esc(school.id)}">${esc(school.name)} · ${esc(platformPlan(school).name)} (${money(platformPlan(school).amount)}/month)</option>`).join("")}</select></div><div class="field"><label for="billing-amount">Amount received (dalasi)</label><input id="billing-amount" name="amount" inputmode="decimal" placeholder="1500.00" required></div><div class="field"><label for="billing-method">Payment method</label><select id="billing-method" name="paymentMethod"><option value="cash">Cash</option><option value="wave">Wave</option><option value="bank_transfer">Bank transfer</option><option value="card">Card</option><option value="other">Other</option></select></div><div class="field"><label for="billing-reference">Payment reference (optional)</label><input id="billing-reference" name="reference" maxlength="100" placeholder="Wave or bank reference"></div><div class="field"><label for="billing-date">Payment date</label><input id="billing-date" name="paidOn" type="date" value="${localDate()}" required></div><div class="field"><label for="billing-months">Months covered</label><input id="billing-months" name="coverageMonths" type="number" min="1" max="24" value="1" required></div></div><div class="form-actions"><button class="button" ${payable.length ? "" : "disabled"}>Record payment</button></div><div id="billing-error" class="error" role="alert"></div></form></section>
-    <section class="panel"><div class="panel-heading"><div><h2>School subscription status</h2><p>${shown.length} of ${schools.length} schools shown</p></div><div class="toolbar"><label for="billing-filter">Filter</label><select id="billing-filter"><option value="all">All schools</option>${["trial", "paid", "overdue", "suspended", "pending", "cancelled", "pending_deletion"].map((status) => `<option value="${status}" ${billingFilter === status ? "selected" : ""}>${billingStatusLabel(status)}</option>`).join("")}</select><button id="refresh-billing" class="text-button">Refresh</button></div></div>${table(["School", "Plan", "Trial / paid until", "Last payment", "Status", "Action"], shown.map((school) => { const plan = platformPlan(school), status = school.billingState; return `<tr><td><span class="student-name">${esc(school.name)}</span><span class="sub">${platformSchoolCount(school)} students · ${esc(school.administrator_email || "")}</span></td><td>${esc(plan.name)}<span class="sub">${money(plan.amount)}/month</span></td><td>${status === "trial" ? `Trial: ${platformDate(school.trial_ends_at)}` : `Paid: ${platformDate(school.subscription_paid_until)}`}</td><td>${school.last_payment_date ? `${money(Number(school.last_payment_amount))}<span class="sub">${platformDate(school.last_payment_date)} · ${esc(String(school.last_payment_method || "").replaceAll("_", " "))}</span>` : "—"}</td><td><span class="badge ${["overdue", "suspended", "cancelled", "pending_deletion"].includes(status) ? "amber" : ""}">${esc(billingStatusLabel(status))}</span></td><td>${["active", "suspended"].includes(school.status) ? `<button class="text-button billing-access" data-id="${esc(school.id)}" data-name="${esc(school.name)}" data-action="${status === "suspended" ? "reactivate" : "suspend"}">${status === "suspended" ? "Reactivate" : "Suspend"}</button>` : "—"}</td></tr>`; }).join(""))}</section>
+    <div class="stack"><section class="panel"><div class="panel-heading"><div><h2>Record a school payment</h2><p>Standard pricing is D5 per registered student each month. Schools above 1,000 students use an agreed custom price.</p></div><span class="badge gray">Platform owner only</span></div><form id="subscription-payment-form"><div class="form-grid"><div class="field"><label for="billing-school">School</label><select id="billing-school" name="schoolId" required>${payable.map((school) => { const plan = platformPlan(school); return `<option value="${esc(school.id)}">${esc(school.name)} · ${platformSchoolCount(school)} students · ${esc(platformPlanPrice(plan))}</option>`; }).join("")}</select></div><div class="field"><label for="billing-amount">Amount received (dalasi)</label><input id="billing-amount" name="amount" inputmode="decimal" placeholder="Enter the verified amount" required></div><div class="field"><label for="billing-method">Payment method</label><select id="billing-method" name="paymentMethod"><option value="cash">Cash</option><option value="wave">Wave</option><option value="bank_transfer">Bank transfer</option><option value="card">Card</option><option value="other">Other</option></select></div><div class="field"><label for="billing-reference">Payment reference (optional)</label><input id="billing-reference" name="reference" maxlength="100" placeholder="Wave or bank reference"></div><div class="field"><label for="billing-date">Payment date</label><input id="billing-date" name="paidOn" type="date" value="${localDate()}" required></div><div class="field"><label for="billing-months">Months covered</label><input id="billing-months" name="coverageMonths" type="number" min="1" max="24" value="1" required></div></div><div class="form-actions"><button class="button" ${payable.length ? "" : "disabled"}>Record payment</button></div><div id="billing-error" class="error" role="alert"></div></form></section>
+    <section class="panel"><div class="panel-heading"><div><h2>School subscription status</h2><p>${shown.length} of ${schools.length} schools shown</p></div><div class="toolbar"><label for="billing-filter">Filter</label><select id="billing-filter"><option value="all">All schools</option>${["trial", "paid", "overdue", "suspended", "pending", "cancelled", "pending_deletion"].map((status) => `<option value="${status}" ${billingFilter === status ? "selected" : ""}>${billingStatusLabel(status)}</option>`).join("")}</select><button id="refresh-billing" class="text-button">Refresh</button></div></div>${table(["School", "Pricing", "Trial / paid until", "Last payment", "Status", "Action"], shown.map((school) => { const plan = platformPlan(school), status = school.billingState; return `<tr><td><span class="student-name">${esc(school.name)}</span><span class="sub">${platformSchoolCount(school)} students · ${esc(school.administrator_email || "")}</span></td><td>${esc(plan.name)}<span class="sub">${esc(platformPlanPrice(plan))}</span></td><td>${status === "trial" ? `Trial: ${platformDate(school.trial_ends_at)}` : `Paid: ${platformDate(school.subscription_paid_until)}`}</td><td>${school.last_payment_date ? `${money(Number(school.last_payment_amount))}<span class="sub">${platformDate(school.last_payment_date)} · ${esc(String(school.last_payment_method || "").replaceAll("_", " "))}</span>` : "—"}</td><td><span class="badge ${["overdue", "suspended", "cancelled", "pending_deletion"].includes(status) ? "amber" : ""}">${esc(billingStatusLabel(status))}</span></td><td>${["active", "suspended"].includes(school.status) ? `<button class="text-button billing-access" data-id="${esc(school.id)}" data-name="${esc(school.name)}" data-action="${status === "suspended" ? "reactivate" : "suspend"}">${status === "suspended" ? "Reactivate" : "Suspend"}</button>` : "—"}</td></tr>`; }).join(""))}</section>
     <section class="panel"><div class="panel-heading"><h2>Recent subscription payments</h2><small>Latest ${platformBilling.payments.length}</small></div>${table(["Date", "School", "Amount", "Method / reference", "Coverage"], platformBilling.payments.map((payment) => `<tr><td>${platformDate(payment.paid_on)}</td><td>${esc(payment.school_name)}</td><td>${money(Number(payment.amount_bututs))}</td><td>${esc(String(payment.payment_method).replaceAll("_", " "))}<span class="sub">${esc(payment.payment_reference || "No reference")}</span></td><td>${payment.coverage_months} month${payment.coverage_months === 1 ? "" : "s"}<span class="sub">Until ${platformDate(payment.coverage_ends_on)}</span></td></tr>`).join(""))}</section></div>`
   );
 }
@@ -1681,7 +1681,13 @@ function wire() {
       const school = platformBilling.schools.find(
         (item) => item.id === event.target.value,
       );
-      if (school) $("#billing-amount").value = (platformPlan(school).amount / 100).toFixed(2);
+      if (school) {
+        const plan = platformPlan(school);
+        $("#billing-amount").value = plan.custom ? "" : (plan.amount / 100).toFixed(2);
+        $("#billing-amount").placeholder = plan.custom
+          ? "Enter the agreed custom amount"
+          : "D5 × registered students";
+      }
     };
     $("#subscription-payment-form").onsubmit = async (event) => {
       event.preventDefault();
@@ -1726,8 +1732,11 @@ function wire() {
     const selected = platformBilling.schools.find(
       (school) => ["active", "suspended"].includes(school.status),
     );
-    if (selected && !$("#billing-amount").value)
-      $("#billing-amount").value = (platformPlan(selected).amount / 100).toFixed(2);
+    if (selected && !$("#billing-amount").value) {
+      const plan = platformPlan(selected);
+      if (!plan.custom)
+        $("#billing-amount").value = (plan.amount / 100).toFixed(2);
+    }
   }
   if (view === "platform") {
     $("#refresh-schools").onclick = loadSchools;
