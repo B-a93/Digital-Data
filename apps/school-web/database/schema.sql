@@ -27,6 +27,23 @@ ALTER TABLE schools ADD COLUMN IF NOT EXISTS trial_status text NOT NULL DEFAULT 
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS trial_started_at timestamptz;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS trial_ends_at timestamptz;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS estimated_student_count integer;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS billing_status text NOT NULL DEFAULT 'unpaid';
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS subscription_paid_until date;
+
+CREATE TABLE IF NOT EXISTS platform_subscription_payments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  amount_bututs bigint NOT NULL CHECK (amount_bututs > 0),
+  payment_method text NOT NULL CHECK (payment_method IN ('cash','wave','bank_transfer','card','other')),
+  payment_reference text,
+  paid_on date NOT NULL DEFAULT CURRENT_DATE,
+  coverage_months integer NOT NULL DEFAULT 1 CHECK (coverage_months BETWEEN 1 AND 24),
+  coverage_ends_on date NOT NULL,
+  recorded_by text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS platform_subscription_payments_school_idx
+  ON platform_subscription_payments(school_id,paid_on DESC);
 
 CREATE TABLE IF NOT EXISTS school_data_deletions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
