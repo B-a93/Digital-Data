@@ -2327,6 +2327,110 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
+    if (pathname === "/api/platform/billing") {
+      await requirePlatformOwner(req);
+      if (req.method !== "GET") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const [schools, payments] = await Promise.all([
+        query(
+          `SELECT s.id,s.name,s.slug,s.status,s.billing_status,s.trial_status,
+                  s.trial_ends_at,s.subscription_paid_until,s.estimated_student_count,
+                  COALESCE((SELECT count(*) FROM students st WHERE st.school_id=s.id AND st.status='active'),0)::integer AS student_count,
+                  o.administrator_name,o.administrator_email,
+                  p.amount_bututs AS last_payment_amount,p.paid_on AS last_payment_date,
+                  p.payment_method AS last_payment_method,p.payment_reference AS last_payment_reference
+           FROM schools s
+           LEFT JOIN school_onboarding o ON o.school_id=s.id
+           LEFT JOIN LATERAL (
+             SELECT amount_bututs,paid_on,payment_method,payment_reference
+             FROM platform_subscription_payments WHERE school_id=s.id
+             ORDER BY paid_on DESC,created_at DESC LIMIT 1
+           ) p ON true
+           ORDER BY s.name`,
+        ),
+        query(
+          `SELECT p.id,p.school_id,s.name AS school_name,p.amount_bututs,p.payment_method,
+                  p.payment_reference,p.paid_on,p.coverage_months,p.coverage_ends_on,p.recorded_by
+           FROM platform_subscription_payments p JOIN schools s ON s.id=p.school_id
+           ORDER BY p.paid_on DESC,p.created_at DESC LIMIT 100`,
+        ),
+      ]);
+      json(res, 200, { schools: schools.rows, payments: payments.rows });
+      return;
+    }
+    if (pathname === "/api/platform/billing/payments") {
+      const owner = await requirePlatformOwner(req);
+      if (req.method !== "POST") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const data = await readJsonBody(req),
+        schoolId = String(data.schoolId || ""),
+        amountBututs = Math.round(Number(data.amount) * 100),
+        method = String(data.paymentMethod || ""),
+        reference = String(data.reference || "").trim() || null,
+        paidOn = String(data.paidOn || ""),
+        coverageMonths = Number(data.coverageMonths);
+      if (
+        !/^[0-9a-f-]{36}$/.test(schoolId) ||
+        !Number.isSafeInteger(amountBututs) || amountBututs <= 0 ||
+        !["cash", "wave", "bank_transfer", "card", "other"].includes(method) ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(paidOn) ||
+        !Number.isInteger(coverageMonths) || coverageMonths < 1 || coverageMonths > 24
+      ) {
+        json(res, 400, { error: "Enter valid subscription payment details." });
+        return;
+      }
+      const payment = await transaction(async (client) => {
+        const school = (await client.query(`SELECT id FROM schools WHERE id=$1 FOR UPDATE`, [schoolId])).rows[0];
+        if (!school) throw Object.assign(new Error("School not found."), { status: 404 });
+        const result = await client.query(
+          `WITH coverage AS (
+             SELECT (GREATEST(COALESCE(subscription_paid_until,CURRENT_DATE),CURRENT_DATE)
+                     + ($6::integer * interval '1 month'))::date AS ends_on
+             FROM schools WHERE id=$1
+           ), inserted AS (
+             INSERT INTO platform_subscription_payments
+               (school_id,amount_bututs,payment_method,payment_reference,paid_on,coverage_months,coverage_ends_on,recorded_by)
+             SELECT $1,$2,$3,$4,$5,$6,ends_on,$7 FROM coverage
+             RETURNING *
+           )
+           UPDATE schools SET billing_status='paid',subscription_paid_until=inserted.coverage_ends_on,
+                  status=CASE WHEN status='suspended' THEN 'active' ELSE status END,updated_at=now()
+           FROM inserted WHERE schools.id=$1 RETURNING inserted.*`,
+          [schoolId, amountBututs, method, reference, paidOn, coverageMonths, owner.email],
+        );
+        return result.rows[0];
+      });
+      json(res, 201, { payment });
+      return;
+    }
+    const billingSchool = pathname.match(/^\/api\/platform\/billing\/schools\/([0-9a-f-]{36})$/);
+    if (billingSchool) {
+      await requirePlatformOwner(req);
+      if (req.method !== "PATCH") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const data = await readJsonBody(req), action = String(data.action || "");
+      if (!["suspend", "reactivate"].includes(action)) {
+        json(res, 400, { error: "Choose suspend or reactivate." });
+        return;
+      }
+      const result = await query(
+        `UPDATE schools SET billing_status=$2,status=$3,updated_at=now() WHERE id=$1
+         AND status NOT IN ('cancelled','pending_deletion') RETURNING id,name,status,billing_status`,
+        [billingSchool[1], action === "suspend" ? "suspended" : "unpaid", action === "suspend" ? "suspended" : "active"],
+      );
+      if (!result.rows[0]) {
+        json(res, 404, { error: "School cannot be updated." });
+        return;
+      }
+      json(res, 200, { school: result.rows[0] });
+      return;
+    }
     if (pathname === "/api/platform/schools") {
       await requirePlatformOwner(req);
       if (req.method === "GET") {
