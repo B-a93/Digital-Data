@@ -1,10 +1,15 @@
-const CACHE_NAME = "school-portal-shell-v10";
+const CACHE_NAME = "school-portal-shell-v11";
 const APP_SHELL = [
   "/",
   "/style.css",
   "/app.js",
   "/domain.js",
-  "/app-icon.svg",
+  "/school-logo.png",
+  "/school-icon.png",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/apple-touch-icon.png",
+  "/favicon.ico",
   "/manifest.webmanifest",
 ];
 

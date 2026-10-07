@@ -78,6 +78,23 @@ a {
   border-radius: 13px;
   font-size: 25px;
 }
+.brand-logo {
+  display: block;
+  height: auto;
+  object-fit: contain;
+}
+.brand-logo-sidebar {
+  max-width: 195px;
+  width: 100%;
+}
+.brand-logo-header {
+  max-width: 285px;
+  width: min(38vw, 285px);
+}
+.brand-logo-login {
+  max-width: 330px;
+  width: 100%;
+}
 .nav-label {
   font-size: 10px;
   letter-spacing: 1.6px;
@@ -1396,6 +1413,9 @@ a:focus-visible {
   }
   .product-header .brand {
     font-size: 12px;
+  }
+  .brand-logo-header {
+    width: min(58vw, 235px);
   }
   .product-main {
     padding: 0 18px 50px;

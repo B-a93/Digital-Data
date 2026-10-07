@@ -32,7 +32,7 @@
     <meta property="og:url" content="https://school.elegantempireai.com/" />
     <meta
       property="og:image"
-      content="https://school.elegantempireai.com/app-icon.svg"
+      content="https://school.elegantempireai.com/school-logo.png"
     />
     <meta name="twitter:card" content="summary" />
     <meta
@@ -44,19 +44,16 @@
       content="Secure digital school administration for Gambian schools and skills-training centres."
     />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="icon" href="/app-icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/app-icon.svg" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="stylesheet" href="/style.css?v=20261005-3" />
   </head>
   <body>
     <section id="auth-screen" class="auth-screen" aria-labelledby="login-title">
       <div class="login-card">
         <div class="login-brand">
-          <span class="brand-icon">S</span>
-          <div>
-            <strong>School Management Portal</strong
-            ><small>BY ELEGANT EMPIRE AI</small>
-          </div>
+          <img class="brand-logo brand-logo-login" src="/school-logo.png" alt="School Management Portal by Elegant Empire AI" />
         </div>
         <div id="login-panel">
           <span class="eyebrow">SECURE ACCESS</span>
@@ -221,12 +218,9 @@
     </section>
     <div class="layout" hidden>
       <aside class="sidebar" id="portal-sidebar">
-        <a class="brand" href="#dashboard"
-          ><span class="brand-icon">S</span
-          ><span
-            >School Management Portal<small>BY ELEGANT EMPIRE AI</small></span
-          ></a
-        >
+        <a class="brand" href="#dashboard" aria-label="School Management Portal dashboard">
+          <img class="brand-logo brand-logo-sidebar" src="/school-logo.png" alt="School Management Portal by Elegant Empire AI" />
+        </a>
         <p class="nav-label">PORTAL</p>
         <nav aria-label="Main navigation" id="nav"></nav>
         <div class="sidebar-bottom">
