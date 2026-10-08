@@ -529,6 +529,7 @@ const server = http.createServer(async (req, res) => {
         paymentAdjustments,
         feeAdjustments,
         studentLifecycle,
+        guardianFollowUps,
       ] = await Promise.all([
         query(
           `SELECT id,name,slug,current_academic_year,current_term,pass_mark,grade_scale,school_type,region,district,
@@ -619,6 +620,12 @@ const server = http.createServer(async (req, res) => {
            FROM student_lifecycle_events WHERE school_id=$1 ORDER BY event_date,created_at`,
           [context.school_id],
         ),
+        query(
+          `SELECT id,student_id,contact_method,category,contacted_on,outcome,follow_up_on,status,
+                  recorded_by,completed_at,created_at,updated_at
+           FROM guardian_follow_ups WHERE school_id=$1 ORDER BY contacted_on,created_at`,
+          [context.school_id],
+        ),
       ]);
       const backup = {
         format: "digital-data-school-backup",
@@ -642,6 +649,7 @@ const server = http.createServer(async (req, res) => {
         paymentAdjustments: paymentAdjustments.rows,
         feeAdjustments: feeAdjustments.rows,
         studentLifecycle: studentLifecycle.rows,
+        guardianFollowUps: guardianFollowUps.rows,
       };
       await recordAudit(
         context,
@@ -929,6 +937,78 @@ const server = http.createServer(async (req, res) => {
         count: promoted,
       });
       json(res, 200, { promoted });
+      return;
+    }
+    if (pathname === "/api/school/guardian-follow-ups") {
+      const context = await requireSchoolContext(req);
+      if (req.method === "GET") {
+        const result = await query(
+          `SELECT f.id,f.student_id,f.contact_method,f.category,f.contacted_on,f.outcome,
+                  f.follow_up_on,f.status,f.recorded_by,f.completed_at,f.created_at,
+                  s.full_name,s.student_number,c.name AS class_name
+           FROM guardian_follow_ups f
+           JOIN students s ON s.id=f.student_id
+           LEFT JOIN classes c ON c.id=s.class_id
+           WHERE f.school_id=$1
+           ORDER BY CASE WHEN f.status='open' THEN 0 ELSE 1 END,
+                    f.follow_up_on NULLS LAST,f.contacted_on DESC,f.created_at DESC
+           LIMIT 500`,
+          [context.school_id],
+        );
+        json(res,200,{ followUps: result.rows });
+        return;
+      }
+      if (req.method !== "POST") {
+        json(res,405,{ error: "Method not allowed" });
+        return;
+      }
+      const data = await readJsonBody(req),
+        studentId = String(data.studentId || "").trim(),
+        contactMethod = String(data.contactMethod || "").trim(),
+        category = String(data.category || "").trim(),
+        contactedOn = String(data.contactedOn || "").trim(),
+        outcome = String(data.outcome || "").trim(),
+        followUpOn = String(data.followUpOn || "").trim();
+      if (!/^[0-9a-f-]{36}$/i.test(studentId) || !["phone","whatsapp","meeting","email","other"].includes(contactMethod) ||
+          !["attendance","fees","academic","behaviour","welfare","general"].includes(category) ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(contactedOn) || outcome.length < 3 || outcome.length > 500 ||
+          (followUpOn && !/^\d{4}-\d{2}-\d{2}$/.test(followUpOn))) {
+        json(res,400,{ error: "Enter a valid student, contact details and outcome." });
+        return;
+      }
+      const followUp = (await query(
+        `INSERT INTO guardian_follow_ups(school_id,student_id,contact_method,category,contacted_on,outcome,follow_up_on,recorded_by)
+         SELECT $1,s.id,$3,$4,$5,$6,$7,$8 FROM students s WHERE s.id=$2 AND s.school_id=$1
+         RETURNING id,student_id,contact_method,category,contacted_on,outcome,follow_up_on,status,created_at`,
+        [context.school_id,studentId,contactMethod,category,contactedOn,outcome,followUpOn || null,context.auth_user_id],
+      )).rows[0];
+      if (!followUp) {
+        json(res,404,{ error: "Student not found." });
+        return;
+      }
+      await recordAudit(context,"guardian_follow_up.created","student",studentId,{ contactMethod,category,contactedOn,followUpOn: followUpOn || null });
+      json(res,201,{ followUp });
+      return;
+    }
+    const followUpRoute = pathname.match(/^\/api\/school\/guardian-follow-ups\/([0-9a-f-]{36})$/);
+    if (followUpRoute) {
+      const context = await requireSchoolContext(req);
+      if (req.method !== "PATCH") {
+        json(res,405,{ error: "Method not allowed" });
+        return;
+      }
+      const followUp = (await query(
+        `UPDATE guardian_follow_ups SET status='completed',completed_at=now(),updated_at=now()
+         WHERE id=$1 AND school_id=$2 AND status='open'
+         RETURNING id,student_id,status`,
+        [followUpRoute[1],context.school_id],
+      )).rows[0];
+      if (!followUp) {
+        json(res,404,{ error: "Open follow-up not found." });
+        return;
+      }
+      await recordAudit(context,"guardian_follow_up.completed","student",followUp.student_id,{ followUpId: followUp.id });
+      json(res,200,{ followUp });
       return;
     }
     if (pathname === "/api/school/staff") {

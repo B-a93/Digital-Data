@@ -120,6 +120,7 @@ let view = "dashboard",
   schoolProgrammes = [],
   admissionApplications = [],
   studentLifecycle = [],
+  guardianFollowUps = [],
   academicPeriods = [],
   platformBilling = { schools: [], payments: [] },
   billingFilter = "all";
@@ -579,6 +580,14 @@ async function loadStudentLifecycle(studentId) {
   }
   const data = await schoolApi(`/api/school/students/${studentId}/lifecycle`);
   studentLifecycle = data.events || [];
+}
+async function loadGuardianFollowUps() {
+  if (!schoolDataLive) {
+    guardianFollowUps = [];
+    return;
+  }
+  const data = await schoolApi("/api/school/guardian-follow-ups");
+  guardianFollowUps = data.followUps || [];
 }
 async function loadAdmissions() {
   const data = await schoolApi("/api/school/admissions");
@@ -1297,6 +1306,12 @@ function suggestedParentMessage(template) {
     }[template] || ""
   );
 }
+function guardianFollowUpPanel() {
+  if (!schoolDataLive) return "";
+  const open = guardianFollowUps.filter((item) => item.status === "open"),
+    today = localDate(), due = open.filter((item) => item.follow_up_on && String(item.follow_up_on).slice(0,10) <= today);
+  return `<section class="panel"><div class="panel-heading"><div><h2>Record guardian contact</h2><p>Keep a private staff record of calls, messages and meetings.</p></div><span class="badge ${due.length ? "amber" : "gray"}">${open.length} open · ${due.length} due</span></div><form id="guardian-follow-up-form"><div class="form-grid"><div class="field"><label for="follow-up-student">Student</label><select id="follow-up-student" name="studentId" required>${state.students.map((student) => `<option value="${esc(student.id)}">${esc(student.name)} · ${esc(student.admission)}</option>`).join("")}</select></div><div class="field"><label for="contact-method">Contact method</label><select id="contact-method" name="contactMethod"><option value="phone">Phone call</option><option value="whatsapp">WhatsApp</option><option value="meeting">In-person meeting</option><option value="email">Email</option><option value="other">Other</option></select></div><div class="field"><label for="contact-category">Reason</label><select id="contact-category" name="category"><option value="attendance">Attendance</option><option value="fees">Fees</option><option value="academic">Academic progress</option><option value="behaviour">Behaviour</option><option value="welfare">Welfare</option><option value="general">General</option></select></div><div class="field"><label for="contact-date">Contact date</label><input id="contact-date" name="contactedOn" type="date" value="${today}" required></div><div class="field"><label for="next-follow-up">Next follow-up date (optional)</label><input id="next-follow-up" name="followUpOn" type="date"></div><div class="field"><label for="contact-outcome">Outcome or notes</label><textarea id="contact-outcome" name="outcome" maxlength="500" required placeholder="What was discussed or agreed?"></textarea></div></div><div class="form-actions"><button class="button">Save contact record</button><span class="status-text">Visible only to authorised school staff.</span></div><div id="follow-up-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><div><h2>Guardian follow-up history</h2><p>Open actions appear first, followed by completed records.</p></div><small>${guardianFollowUps.length} records</small></div>${table(["Student","Contact","Outcome","Next action","Status"],guardianFollowUps.map((item) => { const followDate = item.follow_up_on ? String(item.follow_up_on).slice(0,10) : ""; return `<tr><td>${esc(item.full_name)}<span class="sub">${esc(item.student_number)} · ${esc(item.class_name || "Unassigned")}</span></td><td>${esc(String(item.contact_method).replaceAll("_"," "))}<span class="sub">${esc(item.category)} · ${esc(String(item.contacted_on).slice(0,10))}</span></td><td>${esc(item.outcome)}</td><td>${followDate ? `<span class="badge ${item.status === "open" && followDate <= today ? "amber" : "gray"}">${esc(followDate)}</span>` : "—"}</td><td>${item.status === "open" ? `<button class="text-button complete-follow-up" data-id="${esc(item.id)}">Mark completed</button>` : '<span class="badge gray">Completed</span>'}</td></tr>`; }).join(""))}</section>`;
+}
 function communications() {
   const recipients = activeStudents().filter(
       (student) => !communicationClass || student.class === communicationClass,
@@ -1311,7 +1326,7 @@ function communications() {
       "Parent & guardian messages",
       "Prepare personalized WhatsApp drafts using guardian phone numbers in the student register.",
     ) +
-    `<div class="stack"><section class="panel"><div class="panel-heading"><div><h2>Prepare a message</h2><p>Messages open in WhatsApp for review. The portal does not send them automatically.</p></div><span class="badge gray">${withPhone.length} reachable</span></div><div class="form-grid"><div class="field"><label for="communication-class">Class</label><select id="communication-class"><option value="">All classes</option>${options(schoolClasses(), communicationClass)}</select></div><div class="field"><label for="communication-template">Message type</label><select id="communication-template"><option value="announcement" ${communicationTemplate === "announcement" ? "selected" : ""}>School announcement</option><option value="attendance" ${communicationTemplate === "attendance" ? "selected" : ""}>Attendance follow-up</option><option value="results" ${communicationTemplate === "results" ? "selected" : ""}>Results available</option><option value="meeting" ${communicationTemplate === "meeting" ? "selected" : ""}>Parent meeting</option></select></div></div><div class="field"><label for="communication-message">Message</label><textarea id="communication-message" rows="5" maxlength="800">${esc(communicationMessage)}</textarea></div><div class="note">Review every draft in WhatsApp before sending. Guardian details and messages are not shared with other parents.</div></section><section class="panel"><div class="panel-heading"><h2>Guardian contact list</h2><small>${recipients.length} active students</small></div>${table(["Student", "Class", "Guardian", "WhatsApp"], recipients.map((student) => `<tr><td>${studentCell(student)}</td><td>${esc(student.class)}</td><td>${esc(student.guardianName || "Not recorded")}<span class="sub">${esc(student.guardianPhone || "No phone number")}</span></td><td>${whatsappPhone(student.guardianPhone) ? `<button class="text-button guardian-whatsapp" data-id="${esc(student.id)}">Open message</button>` : '<span class="status-text">Add phone number</span>'}</td></tr>`).join(""))}</section></div>`
+    `<div class="stack"><section class="panel"><div class="panel-heading"><div><h2>Prepare a message</h2><p>Messages open in WhatsApp for review. The portal does not send them automatically.</p></div><span class="badge gray">${withPhone.length} reachable</span></div><div class="form-grid"><div class="field"><label for="communication-class">Class</label><select id="communication-class"><option value="">All classes</option>${options(schoolClasses(), communicationClass)}</select></div><div class="field"><label for="communication-template">Message type</label><select id="communication-template"><option value="announcement" ${communicationTemplate === "announcement" ? "selected" : ""}>School announcement</option><option value="attendance" ${communicationTemplate === "attendance" ? "selected" : ""}>Attendance follow-up</option><option value="results" ${communicationTemplate === "results" ? "selected" : ""}>Results available</option><option value="meeting" ${communicationTemplate === "meeting" ? "selected" : ""}>Parent meeting</option></select></div></div><div class="field"><label for="communication-message">Message</label><textarea id="communication-message" rows="5" maxlength="800">${esc(communicationMessage)}</textarea></div><div class="note">Review every draft in WhatsApp before sending. Guardian details and messages are not shared with other parents.</div></section>${guardianFollowUpPanel()}<section class="panel"><div class="panel-heading"><h2>Guardian contact list</h2><small>${recipients.length} active students</small></div>${table(["Student", "Class", "Guardian", "WhatsApp"], recipients.map((student) => `<tr><td>${studentCell(student)}</td><td>${esc(student.class)}</td><td>${esc(student.guardianName || "Not recorded")}<span class="sub">${esc(student.guardianPhone || "No phone number")}</span></td><td>${whatsappPhone(student.guardianPhone) ? `<button class="text-button guardian-whatsapp" data-id="${esc(student.id)}">Open message</button>` : '<span class="status-text">Add phone number</span>'}</td></tr>`).join(""))}</section></div>`
   );
 }
 function openGuardianWhatsApp(studentId) {
@@ -2838,6 +2853,38 @@ function wire() {
           openGuardianWhatsApp(button.dataset.id);
         }),
     );
+    if ($("#guardian-follow-up-form"))
+      $("#guardian-follow-up-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const form = new FormData(e.target), button = e.target.querySelector("button"), error = $("#follow-up-error");
+        button.disabled = true;
+        try {
+          await schoolApi("/api/school/guardian-follow-ups",{
+            method: "POST",
+            body: JSON.stringify({
+              studentId: form.get("studentId"), contactMethod: form.get("contactMethod"),
+              category: form.get("category"), contactedOn: form.get("contactedOn"),
+              followUpOn: form.get("followUpOn"), outcome: form.get("outcome"),
+            }),
+          });
+          await loadGuardianFollowUps();
+          render();
+          toast("Guardian contact record saved.");
+        } catch (err) {
+          error.textContent = err.message;
+          button.disabled = false;
+        }
+      };
+    document.querySelectorAll(".complete-follow-up").forEach((button) =>
+      button.onclick = async () => {
+        if (!confirm("Mark this guardian follow-up as completed?")) return;
+        try {
+          await schoolApi(`/api/school/guardian-follow-ups/${button.dataset.id}`,{ method: "PATCH", body: "{}" });
+          await loadGuardianFollowUps();
+          render();
+          toast("Follow-up marked as completed.");
+        } catch (err) { toast(err.message); }
+      });
   }
   if (view === "timetable") {
     $("#print-timetable").onclick = printTimetable;
@@ -3674,6 +3721,7 @@ async function showPortal(session) {
       C: 60,
     };
     await loadSchoolStudents();
+    await loadGuardianFollowUps();
     if (role === "Administrator" || role === "Finance")
       await loadSchoolFinance();
     else {
