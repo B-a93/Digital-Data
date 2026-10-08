@@ -29,6 +29,53 @@ ALTER TABLE schools ADD COLUMN IF NOT EXISTS trial_ends_at timestamptz;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS estimated_student_count integer;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS billing_status text NOT NULL DEFAULT 'unpaid';
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS subscription_paid_until date;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS current_academic_year text;
+UPDATE schools
+SET current_academic_year = CASE
+  WHEN EXTRACT(MONTH FROM CURRENT_DATE) >= 8
+    THEN EXTRACT(YEAR FROM CURRENT_DATE)::integer || '/' || RIGHT((EXTRACT(YEAR FROM CURRENT_DATE)::integer + 1)::text, 2)
+  ELSE (EXTRACT(YEAR FROM CURRENT_DATE)::integer - 1) || '/' || RIGHT(EXTRACT(YEAR FROM CURRENT_DATE)::integer::text, 2)
+END
+WHERE current_academic_year IS NULL;
+ALTER TABLE schools ALTER COLUMN current_academic_year SET NOT NULL;
+ALTER TABLE schools ALTER COLUMN current_academic_year SET DEFAULT
+  (CASE
+    WHEN EXTRACT(MONTH FROM CURRENT_DATE) >= 8
+      THEN EXTRACT(YEAR FROM CURRENT_DATE)::integer || '/' || RIGHT((EXTRACT(YEAR FROM CURRENT_DATE)::integer + 1)::text, 2)
+    ELSE (EXTRACT(YEAR FROM CURRENT_DATE)::integer - 1) || '/' || RIGHT(EXTRACT(YEAR FROM CURRENT_DATE)::integer::text, 2)
+  END);
+
+CREATE TABLE IF NOT EXISTS academic_periods (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  academic_year text NOT NULL,
+  term text NOT NULL,
+  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'closed')),
+  opened_at timestamptz NOT NULL DEFAULT now(),
+  closed_at timestamptz,
+  closed_by text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (school_id, academic_year, term)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS academic_periods_one_active_idx
+  ON academic_periods(school_id) WHERE status='active';
+CREATE INDEX IF NOT EXISTS academic_periods_school_idx
+  ON academic_periods(school_id, created_at DESC);
+INSERT INTO academic_periods(school_id,academic_year,term,status)
+SELECT id,current_academic_year,current_term,'active' FROM schools
+ON CONFLICT(school_id,academic_year,term) DO NOTHING;
+CREATE OR REPLACE FUNCTION create_initial_academic_period()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO academic_periods(school_id,academic_year,term,status)
+  VALUES(NEW.id,NEW.current_academic_year,NEW.current_term,'active')
+  ON CONFLICT(school_id,academic_year,term) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS schools_initial_academic_period ON schools;
+CREATE TRIGGER schools_initial_academic_period
+AFTER INSERT ON schools FOR EACH ROW EXECUTE FUNCTION create_initial_academic_period();
 
 CREATE TABLE IF NOT EXISTS platform_subscription_payments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -203,6 +250,10 @@ CREATE TABLE IF NOT EXISTS attendance (
   recorded_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (student_id, attendance_date)
 );
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS academic_year text;
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS term text;
+UPDATE attendance a SET academic_year=s.current_academic_year,term=s.current_term
+FROM schools s WHERE a.school_id=s.id AND (a.academic_year IS NULL OR a.term IS NULL);
 
 CREATE TABLE IF NOT EXISTS fee_types (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -221,6 +272,11 @@ CREATE TABLE IF NOT EXISTS fee_charges (
   amount_bututs bigint NOT NULL CHECK (amount_bututs > 0),
   created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE fee_charges ADD COLUMN IF NOT EXISTS academic_year text;
+ALTER TABLE fee_charges ADD COLUMN IF NOT EXISTS term text;
+ALTER TABLE fee_charges ADD COLUMN IF NOT EXISTS due_date date;
+UPDATE fee_charges f SET academic_year=s.current_academic_year,term=s.current_term
+FROM schools s WHERE f.school_id=s.id AND (f.academic_year IS NULL OR f.term IS NULL);
 
 CREATE TABLE IF NOT EXISTS payments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -235,6 +291,10 @@ CREATE TABLE IF NOT EXISTS payments (
   UNIQUE (school_id, receipt_number),
   UNIQUE (school_id, operation_key)
 );
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS academic_year text;
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS term text;
+UPDATE payments p SET academic_year=s.current_academic_year,term=s.current_term
+FROM schools s WHERE p.school_id=s.id AND (p.academic_year IS NULL OR p.term IS NULL);
 
 CREATE TABLE IF NOT EXISTS assessments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -256,6 +316,18 @@ CREATE TABLE IF NOT EXISTS assessment_marks (
 );
 ALTER TABLE assessment_marks ADD COLUMN IF NOT EXISTS remark text;
 ALTER TABLE assessments ADD COLUMN IF NOT EXISTS subject_id uuid REFERENCES subjects(id) ON DELETE SET NULL;
+ALTER TABLE assessments ADD COLUMN IF NOT EXISTS academic_year text;
+UPDATE assessments a SET academic_year=s.current_academic_year
+FROM schools s WHERE a.school_id=s.id AND a.academic_year IS NULL;
+
+ALTER TABLE timetable_entries ADD COLUMN IF NOT EXISTS academic_year text;
+ALTER TABLE timetable_entries ADD COLUMN IF NOT EXISTS term text;
+UPDATE timetable_entries t SET academic_year=s.current_academic_year,term=s.current_term
+FROM schools s WHERE t.school_id=s.id AND (t.academic_year IS NULL OR t.term IS NULL);
+ALTER TABLE timetable_entries
+  DROP CONSTRAINT IF EXISTS timetable_entries_school_id_class_id_weekday_start_time_key;
+CREATE UNIQUE INDEX IF NOT EXISTS timetable_entries_period_slot_idx
+  ON timetable_entries(school_id,class_id,academic_year,term,weekday,start_time);
 
 CREATE INDEX IF NOT EXISTS students_school_class_idx ON students(school_id, class_id);
 CREATE INDEX IF NOT EXISTS attendance_school_date_idx ON attendance(school_id, attendance_date);
