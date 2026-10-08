@@ -98,6 +98,23 @@ test('student register identifies incomplete and possible duplicate records safe
  assert.match(app,/student-data-quality-/);
  assert.match(app,/Complete record/);
 });
+test('guardian follow-ups record contact outcomes and due actions without automated messaging',async()=>{
+ const [server,schema,app]=await Promise.all([
+  readFile('apps/school-web/server.mjs','utf8'),
+  readFile('apps/school-web/database/schema.sql','utf8'),
+  readFile('apps/school-web/public/app.js','utf8'),
+ ]);
+ assert.match(schema,/CREATE TABLE IF NOT EXISTS guardian_follow_ups/);
+ assert.match(schema,/contact_method IN \('phone','whatsapp','meeting','email','other'\)/);
+ assert.match(server,/pathname === "\/api\/school\/guardian-follow-ups"/);
+ assert.match(server,/guardian_follow_up\.created/);
+ assert.match(server,/guardian_follow_up\.completed/);
+ assert.match(server,/guardianFollowUps: guardianFollowUps\.rows/);
+ assert.match(app,/Record guardian contact/);
+ assert.match(app,/Next follow-up date/);
+ assert.match(app,/Mark completed/);
+ assert.match(app,/portal does not send them automatically/);
+});
 test('self-onboarding creates an invited workspace and starts trials only after activation',async()=>{
  const [server,schema,onboarding]=await Promise.all([
   readFile('apps/school-web/server.mjs','utf8'),
