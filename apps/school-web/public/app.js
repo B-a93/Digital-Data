@@ -123,7 +123,12 @@ let view = "dashboard",
   guardianFollowUps = [],
   academicPeriods = [],
   platformBilling = { schools: [], payments: [] },
-  billingFilter = "all";
+  billingFilter = "all",
+  activitySearch = "",
+  activityAction = "",
+  activityActor = "",
+  activityFrom = "",
+  activityTo = "";
 let resultTerms = [state.settings.term];
 let timetableEntries = [];
 let attendanceDraft = null;
@@ -1708,6 +1713,7 @@ function activityDescription(item) {
     {
       "student.created": `Registered ${details.fullName || "a student"} (${details.studentNumber || ""})`,
       "student.updated": `Updated ${details.fullName || "a student"}`,
+      "student.lifecycle_changed": `Recorded ${String(details.action || "student lifecycle change").replaceAll("_", " ")}`,
       "student.status_changed": `Changed student status to ${details.status || "unknown"}`,
       "students.imported": `Imported ${details.count || 0} students`,
       "students.promoted": `Promoted ${details.count || 0} students from ${details.fromClass || "a class"} to ${details.toClass || "another class"}`,
@@ -1725,17 +1731,48 @@ function activityDescription(item) {
       "results.published": `Published ${details.className || "class"} results, version ${details.version || ""}`,
       "settings.updated": `Updated school settings for ${details.term || "the current term"}`,
       "academic_period.closed": `Closed ${details.previousAcademicYear || "the previous year"} · ${details.previousTerm || "term"} and opened ${details.academicYear || "the new year"} · ${details.term || "term"}`,
+      "guardian_follow_up.created": `Recorded a ${String(details.contactMethod || "guardian").replaceAll("_", " ")} follow-up about ${details.category || "a school matter"}`,
+      "guardian_follow_up.completed": `Completed a guardian follow-up`,
     }[item.action] || item.action.replaceAll(".", " ")
   );
 }
+function filteredActivity() {
+  const query = activitySearch.trim().toLowerCase();
+  return schoolActivity.filter((item) => {
+    const date = String(item.created_at).slice(0,10), actor = item.actor_email || "School user",
+      description = activityDescription(item);
+    return (!activityAction || item.action === activityAction) &&
+      (!activityActor || actor === activityActor) &&
+      (!activityFrom || date >= activityFrom) && (!activityTo || date <= activityTo) &&
+      (!query || `${actor} ${description} ${item.entity_type || ""} ${item.entity_id || ""}`.toLowerCase().includes(query));
+  });
+}
+function downloadActivityCsv() {
+  const content = csv([
+      ["Date and time","User","Action code","Description","Record type","Record ID"],
+      ...filteredActivity().map((item) => [
+        new Date(item.created_at).toLocaleString("en-GB"),item.actor_email || "School user",
+        item.action,activityDescription(item),item.entity_type || "",item.entity_id || "",
+      ]),
+    ]), blob = new Blob(["\ufeff" + content],{ type: "text/csv;charset=utf-8" }),
+    url = URL.createObjectURL(blob), anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `school-audit-log-${localDate()}.csv`;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url),1000);
+  toast("Filtered audit log downloaded.");
+}
 function activity() {
+  const shown = filteredActivity(), actions = [...new Set(schoolActivity.map((item) => item.action))].sort(),
+    actors = [...new Set(schoolActivity.map((item) => item.actor_email || "School user"))].sort(),
+    today = localDate(), todayCount = schoolActivity.filter((item) => String(item.created_at).slice(0,10) === today).length;
   return (
     heading(
-      "Activity log",
-      "Review important changes made in this school workspace.",
-      '<button class="button secondary" id="refresh-activity">Refresh</button>',
+      "Audit & activity centre",
+      "Search, review and export important changes made in this school workspace.",
+      '<div class="quick-actions"><button class="button secondary" id="activity-csv">Download CSV</button><button class="button secondary" id="refresh-activity">Refresh</button></div>',
     ) +
-    `<section class="panel"><div class="panel-heading"><h2>Recent activity</h2><small>Latest ${schoolActivity.length} events</small></div>${table(["Date and time", "User", "Activity"], schoolActivity.map((item) => `<tr><td>${esc(new Date(item.created_at).toLocaleString("en-GB"))}</td><td>${esc(item.actor_email || "School user")}</td><td>${esc(activityDescription(item))}</td></tr>`).join(""))}<div class="note">The activity log records new actions from the time this feature is deployed. It does not recreate actions performed earlier.</div></section>`
+    `<div class="cards"><div class="card"><div class="card-label">Events loaded</div><div class="number">${schoolActivity.length}</div><small>Latest auditable changes</small></div><div class="card"><div class="card-label">Today</div><div class="number">${todayCount}</div><small>Events recorded today</small></div><div class="card"><div class="card-label">Staff accounts</div><div class="number">${actors.length}</div><small>Users represented in this log</small></div><div class="card"><div class="card-label">Filtered results</div><div class="number">${shown.length}</div><small>Matching the current filters</small></div></div><section class="panel"><form id="activity-filters" class="form-grid"><div class="field"><label for="activity-search">Search</label><input id="activity-search" name="search" value="${esc(activitySearch)}" placeholder="Student, payment, user or record ID"></div><div class="field"><label for="activity-action">Action</label><select id="activity-action" name="action"><option value="">All actions</option>${actions.map((action) => `<option value="${esc(action)}" ${activityAction === action ? "selected" : ""}>${esc(action.replaceAll(".", " "))}</option>`).join("")}</select></div><div class="field"><label for="activity-actor">Staff member</label><select id="activity-actor" name="actor"><option value="">All users</option>${actors.map((actor) => `<option value="${esc(actor)}" ${activityActor === actor ? "selected" : ""}>${esc(actor)}</option>`).join("")}</select></div><div class="field"><label for="activity-from">From date</label><input id="activity-from" name="from" type="date" value="${esc(activityFrom)}"></div><div class="field"><label for="activity-to">To date</label><input id="activity-to" name="to" type="date" value="${esc(activityTo)}"></div><div class="form-actions"><button class="button">Apply filters</button><button class="button secondary" type="button" id="clear-activity-filters">Clear</button></div></form></section><section class="panel"><div class="panel-heading"><h2>Audit records</h2><small>${shown.length} of ${schoolActivity.length} events</small></div>${table(["Date and time", "User", "Activity", "Record"], shown.map((item) => `<tr><td>${esc(new Date(item.created_at).toLocaleString("en-GB"))}</td><td>${esc(item.actor_email || "School user")}</td><td>${esc(activityDescription(item))}<span class="sub">${esc(item.action)}</span></td><td>${esc(item.entity_type || "—")}<span class="sub">${esc(item.entity_id || "")}</span></td></tr>`).join(""))}<div class="note">Audit records are append-only in the portal. Filtering and exporting do not alter them.</div></section>`
   );
 }
 function staff() {
@@ -3451,6 +3488,18 @@ function wire() {
     );
   }
   if (view === "activity") {
+    $("#activity-filters").onsubmit = (event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      activitySearch = form.get("search").trim(); activityAction = form.get("action");
+      activityActor = form.get("actor"); activityFrom = form.get("from"); activityTo = form.get("to");
+      render();
+    };
+    $("#clear-activity-filters").onclick = () => {
+      activitySearch = activityAction = activityActor = activityFrom = activityTo = "";
+      render();
+    };
+    $("#activity-csv").onclick = downloadActivityCsv;
     $("#refresh-activity").onclick = async () => {
       try {
         await loadSchoolActivity();

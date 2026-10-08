@@ -497,7 +497,7 @@ const server = http.createServer(async (req, res) => {
       }
       const result = await query(
         `SELECT id,actor_email,action,entity_type,entity_id,details,created_at
-         FROM audit_logs WHERE school_id=$1 ORDER BY created_at DESC LIMIT 200`,
+         FROM audit_logs WHERE school_id=$1 ORDER BY created_at DESC LIMIT 1000`,
         [context.school_id],
       );
       json(res, 200, { activity: result.rows });
