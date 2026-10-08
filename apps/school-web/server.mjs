@@ -98,6 +98,12 @@ async function proxyAuth(req, res, pathname, search) {
   res.end(Buffer.from(await upstream.arrayBuffer()));
 }
 const tokenHash = (token) => createHash("sha256").update(token).digest("hex");
+const validAcademicYear = (value) => {
+  const match = /^(\d{4})\/(\d{2})$/.exec(value);
+  return Boolean(
+    match && Number(match[2]) === (Number(match[1]) + 1) % 100,
+  );
+};
 const baseUrl = () =>
   String(process.env.APP_BASE_URL || "")
     .trim()
@@ -449,7 +455,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const membership = await query(
-        `SELECT su.role,s.id,s.name,s.slug,s.current_term,s.pass_mark,s.grade_scale,s.school_type,s.status,
+        `SELECT su.role,s.id,s.name,s.slug,s.current_academic_year,s.current_term,s.pass_mark,s.grade_scale,s.school_type,s.status,
                 s.trial_status,s.trial_started_at,s.trial_ends_at
          FROM school_users su JOIN schools s ON s.id=su.school_id
          WHERE su.auth_user_id=$1 AND s.status='active'
@@ -469,6 +475,7 @@ const server = http.createServer(async (req, res) => {
           id: row.id,
           name: row.name,
           slug: row.slug,
+          academicYear: row.current_academic_year,
           term: row.current_term,
           passMark: Number(row.pass_mark),
           gradeScale: row.grade_scale,
@@ -518,9 +525,10 @@ const server = http.createServer(async (req, res) => {
         timetable,
         staff,
         activity,
+        academicPeriods,
       ] = await Promise.all([
         query(
-          `SELECT id,name,slug,current_term,pass_mark,grade_scale,school_type,region,district,
+          `SELECT id,name,slug,current_academic_year,current_term,pass_mark,grade_scale,school_type,region,district,
              contact_name,contact_email,contact_phone,status,created_at,updated_at
            FROM schools WHERE id=$1`,
           [context.school_id],
@@ -543,7 +551,7 @@ const server = http.createServer(async (req, res) => {
           [context.school_id],
         ),
         query(
-          `SELECT id,student_id,attendance_date,status,recorded_at
+          `SELECT id,student_id,attendance_date,status,academic_year,term,recorded_at
            FROM attendance WHERE school_id=$1 ORDER BY attendance_date,student_id`,
           [context.school_id],
         ),
@@ -552,17 +560,17 @@ const server = http.createServer(async (req, res) => {
           [context.school_id],
         ),
         query(
-          `SELECT id,student_id,fee_type_id,description,amount_bututs,created_at
+          `SELECT id,student_id,fee_type_id,description,amount_bututs,academic_year,term,due_date,created_at
            FROM fee_charges WHERE school_id=$1 ORDER BY created_at`,
           [context.school_id],
         ),
         query(
-          `SELECT id,student_id,amount_bututs,receipt_number,paid_on,created_at
+          `SELECT id,student_id,amount_bututs,receipt_number,academic_year,term,paid_on,created_at
            FROM payments WHERE school_id=$1 ORDER BY paid_on,created_at`,
           [context.school_id],
         ),
         query(
-          `SELECT id,class_id,subject_id,title,term,maximum_score,published_at,created_at
+          `SELECT id,class_id,subject_id,title,academic_year,term,maximum_score,published_at,created_at
            FROM assessments WHERE school_id=$1 ORDER BY created_at`,
           [context.school_id],
         ),
@@ -573,7 +581,7 @@ const server = http.createServer(async (req, res) => {
           [context.school_id],
         ),
         query(
-          `SELECT id,class_id,subject_id,weekday,start_time,end_time,teacher_name,created_at
+          `SELECT id,class_id,subject_id,weekday,start_time,end_time,teacher_name,academic_year,term,created_at
            FROM timetable_entries WHERE school_id=$1 ORDER BY class_id,weekday,start_time`,
           [context.school_id],
         ),
@@ -585,6 +593,11 @@ const server = http.createServer(async (req, res) => {
         query(
           `SELECT actor_email,action,entity_type,entity_id,details,created_at
            FROM audit_logs WHERE school_id=$1 ORDER BY created_at`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT id,academic_year,term,status,opened_at,closed_at,closed_by,created_at
+           FROM academic_periods WHERE school_id=$1 ORDER BY opened_at`,
           [context.school_id],
         ),
       ]);
@@ -606,6 +619,7 @@ const server = http.createServer(async (req, res) => {
         timetable: timetable.rows,
         staff: staff.rows,
         activity: activity.rows,
+        academicPeriods: academicPeriods.rows,
       };
       await recordAudit(
         context,
@@ -1277,6 +1291,96 @@ const server = http.createServer(async (req, res) => {
       json(res, 200, { status: "deleted" });
       return;
     }
+    if (pathname === "/api/school/academic-periods") {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method === "GET") {
+        const [school, periods] = await Promise.all([
+          query(
+            `SELECT current_academic_year,current_term FROM schools WHERE id=$1`,
+            [context.school_id],
+          ),
+          query(
+            `SELECT id,academic_year,term,status,opened_at,closed_at
+             FROM academic_periods WHERE school_id=$1
+             ORDER BY opened_at DESC,created_at DESC`,
+            [context.school_id],
+          ),
+        ]);
+        json(res, 200, { current: school.rows[0], periods: periods.rows });
+        return;
+      }
+      if (req.method === "POST") {
+        const data = await readJsonBody(req),
+          academicYear = String(data.academicYear || "").trim(),
+          term = String(data.term || "").trim(),
+          confirmation = String(data.confirmation || "").trim();
+        if (
+          !validAcademicYear(academicYear) ||
+          !term ||
+          term.length > 60 ||
+          confirmation !== context.name
+        ) {
+          json(res, 400, {
+            error: "Enter the next academic year, term and school name exactly.",
+          });
+          return;
+        }
+        const period = await transaction(async (client) => {
+          const school = (
+            await client.query(
+              `SELECT current_academic_year,current_term FROM schools WHERE id=$1 FOR UPDATE`,
+              [context.school_id],
+            )
+          ).rows[0];
+          if (
+            school.current_academic_year === academicYear &&
+            school.current_term === term
+          )
+            throw Object.assign(
+              new Error("Choose a different academic year or term."),
+              { status: 409 },
+            );
+          await client.query(
+            `UPDATE academic_periods SET status='closed',closed_at=now(),closed_by=$2
+             WHERE school_id=$1 AND status='active'`,
+            [context.school_id, context.id],
+          );
+          const next = (
+            await client.query(
+              `INSERT INTO academic_periods(school_id,academic_year,term,status)
+               VALUES($1,$2,$3,'active')
+               ON CONFLICT(school_id,academic_year,term)
+               DO UPDATE SET status='active',opened_at=now(),closed_at=NULL,closed_by=NULL
+               RETURNING id,academic_year,term,status,opened_at,closed_at`,
+              [context.school_id, academicYear, term],
+            )
+          ).rows[0];
+          await client.query(
+            `UPDATE schools SET current_academic_year=$2,current_term=$3,updated_at=now()
+             WHERE id=$1`,
+            [context.school_id, academicYear, term],
+          );
+          return { previous: school, current: next };
+        });
+        await recordAudit(
+          context,
+          "academic_period.closed",
+          "academic_period",
+          period.current.id,
+          {
+            previousAcademicYear: period.previous.current_academic_year,
+            previousTerm: period.previous.current_term,
+            academicYear,
+            term,
+          },
+        );
+        json(res, 201, period);
+        return;
+      }
+      json(res, 405, { error: "Method not allowed" });
+      return;
+    }
     if (pathname === "/api/school/settings") {
       const context = await requireSchoolContext(req);
       requireRole(context, "administrator");
@@ -1314,9 +1418,9 @@ const server = http.createServer(async (req, res) => {
       }
       const settings = (
         await query(
-          `UPDATE schools SET name=$2,current_term=$3,pass_mark=$4,grade_scale=$5,updated_at=now()
-           WHERE id=$1 RETURNING id,name,current_term,pass_mark,grade_scale`,
-          [context.school_id, name, term, passMark, gradeScale],
+          `UPDATE schools SET name=$2,pass_mark=$3,grade_scale=$4,updated_at=now()
+           WHERE id=$1 RETURNING id,name,current_academic_year,current_term,pass_mark,grade_scale`,
+          [context.school_id, name, passMark, gradeScale],
         )
       ).rows[0];
       await recordAudit(
@@ -1751,9 +1855,9 @@ const server = http.createServer(async (req, res) => {
         ).rows[0];
         return (
           await client.query(
-            `INSERT INTO fee_charges(school_id,student_id,fee_type_id,description,amount_bututs)
-             VALUES($1,$2,$3,$4,$5)
-             RETURNING id,student_id,description,amount_bututs,created_at`,
+            `INSERT INTO fee_charges(school_id,student_id,fee_type_id,description,amount_bututs,academic_year,term)
+             SELECT $1,$2,$3,$4,$5,current_academic_year,current_term FROM schools WHERE id=$1
+             RETURNING id,student_id,description,amount_bututs,academic_year,term,due_date,created_at`,
             [context.school_id, studentId, feeType.id, description, amount],
           )
         ).rows[0];
@@ -1815,8 +1919,8 @@ const server = http.createServer(async (req, res) => {
         ).rows[0];
         for (const student of students)
           await client.query(
-            `INSERT INTO fee_charges(school_id,student_id,fee_type_id,description,amount_bututs)
-             VALUES($1,$2,$3,$4,$5)`,
+            `INSERT INTO fee_charges(school_id,student_id,fee_type_id,description,amount_bututs,academic_year,term)
+             SELECT $1,$2,$3,$4,$5,current_academic_year,current_term FROM schools WHERE id=$1`,
             [context.school_id, student.id, feeType.id, description, amount],
           );
         return students.length;
@@ -1863,8 +1967,8 @@ const server = http.createServer(async (req, res) => {
       const receiptNumber = `REC-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${randomBytes(3).toString("hex").toUpperCase()}`;
       const payment = (
         await query(
-          `INSERT INTO payments(school_id,student_id,amount_bututs,receipt_number,operation_key,paid_on,recorded_by)
-           VALUES($1,$2,$3,$4,$5,CURRENT_DATE,$6)
+          `INSERT INTO payments(school_id,student_id,amount_bututs,receipt_number,operation_key,paid_on,recorded_by,academic_year,term)
+           SELECT $1,$2,$3,$4,$5,CURRENT_DATE,$6,current_academic_year,current_term FROM schools WHERE id=$1
            ON CONFLICT(school_id,operation_key) DO UPDATE SET operation_key=EXCLUDED.operation_key
            RETURNING id,student_id,amount_bututs,receipt_number,paid_on,created_at`,
           [
@@ -1961,8 +2065,8 @@ const server = http.createServer(async (req, res) => {
           );
           for (const [studentId, status] of Object.entries(marks))
             await client.query(
-              `INSERT INTO attendance(school_id,student_id,attendance_date,status,recorded_by)
-               VALUES($1,$2,$3,$4,$5)`,
+              `INSERT INTO attendance(school_id,student_id,attendance_date,status,recorded_by,academic_year,term)
+               SELECT $1,$2,$3,$4,$5,current_academic_year,current_term FROM schools WHERE id=$1`,
               [context.school_id, studentId, date, status, context.id],
             );
           return new Date().toISOString();
@@ -1995,7 +2099,9 @@ const server = http.createServer(async (req, res) => {
              c.name AS class_name,su.name AS subject_name
            FROM timetable_entries te JOIN classes c ON c.id=te.class_id
            JOIN subjects su ON su.id=te.subject_id
+           JOIN schools sc ON sc.id=te.school_id
            WHERE te.school_id=$1 AND c.name=$2
+           AND te.academic_year=sc.current_academic_year AND te.term=sc.current_term
            ORDER BY te.weekday,te.start_time`,
           [context.school_id, className],
         );
@@ -2045,8 +2151,9 @@ const server = http.createServer(async (req, res) => {
             });
           const conflict = (
             await client.query(
-              `SELECT id FROM timetable_entries
-               WHERE school_id=$1 AND class_id=$2 AND weekday=$3
+              `SELECT te.id FROM timetable_entries te JOIN schools sc ON sc.id=te.school_id
+               WHERE te.school_id=$1 AND te.class_id=$2 AND te.weekday=$3
+               AND te.academic_year=sc.current_academic_year AND te.term=sc.current_term
                AND start_time<$5::time AND end_time>$4::time LIMIT 1`,
               [context.school_id, schoolClass.id, weekday, startTime, endTime],
             )
@@ -2058,8 +2165,9 @@ const server = http.createServer(async (req, res) => {
             );
           return (
             await client.query(
-              `INSERT INTO timetable_entries(school_id,class_id,subject_id,weekday,start_time,end_time,teacher_name)
-               VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+              `INSERT INTO timetable_entries(school_id,class_id,subject_id,weekday,start_time,end_time,teacher_name,academic_year,term)
+               SELECT $1,$2,$3,$4,$5,$6,$7,current_academic_year,current_term FROM schools WHERE id=$1
+               RETURNING id,academic_year,term`,
               [
                 context.school_id,
                 schoolClass.id,
@@ -2133,14 +2241,17 @@ const server = http.createServer(async (req, res) => {
         }
         const assessment = (
           await query(
-            `SELECT a.id,a.title,a.term,a.maximum_score,a.published_at,COALESCE(su.name,'General') AS subject_name,
+            `SELECT a.id,a.title,a.academic_year,a.term,a.maximum_score,a.published_at,COALESCE(su.name,'General') AS subject_name,
               (SELECT count(*) FROM assessments versions
                WHERE versions.school_id=a.school_id AND versions.class_id=a.class_id
-               AND versions.term=a.term AND COALESCE(versions.subject_id::text,'')=COALESCE(a.subject_id::text,'')
+               AND versions.academic_year=a.academic_year AND versions.term=a.term
+               AND COALESCE(versions.subject_id::text,'')=COALESCE(a.subject_id::text,'')
                AND versions.published_at IS NOT NULL) AS version
              FROM assessments a JOIN classes c ON c.id=a.class_id
              LEFT JOIN subjects su ON su.id=a.subject_id
-             WHERE a.school_id=$1 AND c.name=$2 AND a.term=$3 AND COALESCE(su.name,'General')=$4
+             JOIN schools sc ON sc.id=a.school_id
+             WHERE a.school_id=$1 AND c.name=$2 AND a.academic_year=sc.current_academic_year
+             AND a.term=$3 AND COALESCE(su.name,'General')=$4
              AND a.published_at IS NOT NULL
              ORDER BY a.published_at DESC LIMIT 1`,
             [context.school_id, className, term, subjectName],
@@ -2211,8 +2322,9 @@ const server = http.createServer(async (req, res) => {
             );
           const assessment = (
             await client.query(
-              `INSERT INTO assessments(school_id,class_id,subject_id,title,term,maximum_score,published_at)
-               VALUES($1,$2,$3,$4,$5,100,now()) RETURNING id,published_at`,
+              `INSERT INTO assessments(school_id,class_id,subject_id,title,term,maximum_score,published_at,academic_year)
+               SELECT $1,$2,$3,$4,$5,100,now(),current_academic_year FROM schools WHERE id=$1
+               RETURNING id,published_at,academic_year`,
               [
                 context.school_id,
                 schoolClass.id,
@@ -2235,8 +2347,9 @@ const server = http.createServer(async (req, res) => {
             );
           const version = (
             await client.query(
-              `SELECT count(*)::int AS count FROM assessments
-               WHERE school_id=$1 AND class_id=$2 AND subject_id=$3 AND term=$4 AND published_at IS NOT NULL`,
+              `SELECT count(*)::int AS count FROM assessments a JOIN schools sc ON sc.id=a.school_id
+               WHERE a.school_id=$1 AND a.class_id=$2 AND a.subject_id=$3
+               AND a.academic_year=sc.current_academic_year AND a.term=$4 AND a.published_at IS NOT NULL`,
               [context.school_id, schoolClass.id, subject.id, term],
             )
           ).rows[0].count;
@@ -2271,8 +2384,8 @@ const server = http.createServer(async (req, res) => {
         `SELECT term FROM (
            SELECT current_term AS term,updated_at AS recorded_at FROM schools WHERE id=$1
            UNION ALL
-           SELECT term,MAX(published_at) AS recorded_at FROM assessments
-           WHERE school_id=$1 AND published_at IS NOT NULL GROUP BY term
+           SELECT a.term,MAX(a.published_at) AS recorded_at FROM assessments a JOIN schools s ON s.id=a.school_id
+           WHERE a.school_id=$1 AND a.academic_year=s.current_academic_year AND a.published_at IS NOT NULL GROUP BY a.term
          ) terms WHERE term IS NOT NULL AND term<>''
          GROUP BY term ORDER BY MAX(recorded_at) DESC`,
         [context.school_id],
@@ -2309,7 +2422,8 @@ const server = http.createServer(async (req, res) => {
              FROM assessments a
              JOIN classes c ON c.id=a.class_id
              LEFT JOIN subjects su ON su.id=a.subject_id
-             WHERE a.school_id=$1 AND c.name=$2 AND a.term=$3
+             JOIN schools sc ON sc.id=a.school_id
+             WHERE a.school_id=$1 AND c.name=$2 AND a.academic_year=sc.current_academic_year AND a.term=$3
                AND a.published_at IS NOT NULL
              ORDER BY COALESCE(su.name,'General'),a.published_at DESC
            )
