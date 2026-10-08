@@ -87,6 +87,17 @@ test('student lifecycle events preserve transfer, withdrawal and re-enrolment hi
  assert.match(app,/receiving school/);
  assert.match(app,/Edit \/ lifecycle/);
 });
+test('student register identifies incomplete and possible duplicate records safely',async()=>{
+ const app=await readFile('apps/school-web/public/app.js','utf8');
+ assert.match(app,/function studentDataQuality\(\)/);
+ assert.match(app,/Student record quality/);
+ assert.match(app,/guardian phone/);
+ assert.match(app,/Possible duplicate groups/);
+ assert.match(app,/No student is deleted or merged automatically/);
+ assert.match(app,/Download review list/);
+ assert.match(app,/student-data-quality-/);
+ assert.match(app,/Complete record/);
+});
 test('self-onboarding creates an invited workspace and starts trials only after activation',async()=>{
  const [server,schema,onboarding]=await Promise.all([
   readFile('apps/school-web/server.mjs','utf8'),
