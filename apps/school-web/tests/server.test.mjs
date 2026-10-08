@@ -115,6 +115,21 @@ test('guardian follow-ups record contact outcomes and due actions without automa
  assert.match(app,/Mark completed/);
  assert.match(app,/portal does not send them automatically/);
 });
+test('dashboard action centre prioritises operational work by staff role',async()=>{
+ const [app,style]=await Promise.all([
+  readFile('apps/school-web/public/app.js','utf8'),
+  readFile('apps/school-web/public/style.css','utf8'),
+ ]);
+ assert.match(app,/function operationsActionCentre\(\)/);
+ assert.match(app,/Operations action centre/);
+ assert.match(app,/Guardian follow-ups due/);
+ assert.match(app,/Attendance incomplete/);
+ assert.match(app,/Admissions awaiting review/);
+ assert.match(app,/Overdue student balances/);
+ assert.match(app,/role === "Administrator" \|\| role === "Finance"/);
+ assert.match(style,/\.action-centre/);
+ assert.match(style,/\.action-item\.urgent/);
+});
 test('self-onboarding creates an invited workspace and starts trials only after activation',async()=>{
  const [server,schema,onboarding]=await Promise.all([
   readFile('apps/school-web/server.mjs','utf8'),
