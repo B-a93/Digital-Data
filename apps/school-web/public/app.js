@@ -88,6 +88,7 @@ state.settings.feeTypes ||= [
 ];
 state.settings.subjects ||= [];
 state.settings.gradeScale ||= { A: 80, B: 70, C: 60 };
+state.settings.academicYear ||= "2026/27";
 state.remarks ||= {};
 let view = "dashboard",
   selectedClass = state.settings.classes[0],
@@ -118,6 +119,7 @@ let view = "dashboard",
   schoolActivity = [],
   schoolProgrammes = [],
   admissionApplications = [],
+  academicPeriods = [],
   platformBilling = { schools: [], payments: [] },
   billingFilter = "all";
 let resultTerms = [state.settings.term];
@@ -318,7 +320,10 @@ function render() {
         `<a href="#${id}" data-nav="${id}" class="${view === id ? "active" : ""}" ${view === id ? 'aria-current="page"' : ""}><span class="nav-icon" aria-hidden="true">${icon}</span>${label}</a>`,
     )
     .join("");
-  setText("#term", state.settings.term);
+  setText(
+    "#term",
+    `${state.settings.academicYear} · ${state.settings.term}`,
+  );
   setText(
     "#school-name",
     isPlatformOwner ? "Elegant Empire AI" : state.settings.name,
@@ -594,6 +599,15 @@ async function loadSchoolStaff() {
 }
 async function loadSchoolActivity() {
   schoolActivity = (await schoolApi("/api/school/activity")).activity;
+}
+async function loadAcademicPeriods() {
+  if (!schoolDataLive || role !== "Administrator") return;
+  const data = await schoolApi("/api/school/academic-periods");
+  academicPeriods = data.periods || [];
+  if (data.current) {
+    state.settings.academicYear = data.current.current_academic_year;
+    state.settings.term = data.current.current_term;
+  }
 }
 async function loadSchoolAttendance(
   date = selectedDate,
@@ -1579,6 +1593,7 @@ function activityDescription(item) {
       "attendance.saved": `Saved attendance for ${details.className || "a class"} on ${details.date || ""}`,
       "results.published": `Published ${details.className || "class"} results, version ${details.version || ""}`,
       "settings.updated": `Updated school settings for ${details.term || "the current term"}`,
+      "academic_period.closed": `Closed ${details.previousAcademicYear || "the previous year"} · ${details.previousTerm || "term"} and opened ${details.academicYear || "the new year"} · ${details.term || "term"}`,
     }[item.action] || item.action.replaceAll(".", " ")
   );
 }
@@ -1602,6 +1617,9 @@ function staff() {
   );
 }
 function settings() {
+  const academicPeriodSection = schoolDataLive
+    ? `<section class="panel"><div class="panel-heading"><div><h2>Academic year and term</h2><p>Close the current period before opening the next one. Existing attendance, fees and results remain attached to their original period.</p></div><span class="badge">${esc(state.settings.academicYear)} · ${esc(state.settings.term)}</span></div><form id="academic-period-form"><div class="form-grid"><div class="field"><label for="next-academic-year">Next academic year</label><input id="next-academic-year" name="academicYear" required pattern="[0-9]{4}/[0-9]{2}" placeholder="e.g. 2027/28"></div><div class="field"><label for="next-term">Next term</label><input id="next-term" name="term" required maxlength="60" placeholder="e.g. Term 2"></div><div class="field"><label for="period-confirmation">Type the school name to confirm</label><input id="period-confirmation" name="confirmation" required autocomplete="off" placeholder="${esc(state.settings.name)}"></div></div><div class="note">Closing a period cannot erase its records. Teachers and finance staff will begin recording new work under the next period.</div><div class="form-actions"><button class="button secondary">Close current period and start next</button></div><div id="academic-period-error" class="error" role="alert"></div></form>${table(["Academic year", "Term", "Status", "Closed"], academicPeriods.map((period) => `<tr><td>${esc(period.academic_year)}</td><td>${esc(period.term)}</td><td><span class="badge ${period.status === "closed" ? "gray" : ""}">${esc(period.status)}</span></td><td>${period.closed_at ? esc(new Date(period.closed_at).toLocaleDateString("en-GB")) : "—"}</td></tr>`).join(""))}</section>`
+    : "";
   const programmesSection = isTrainingOrganisation()
     ? `<section class="panel"><div class="panel-heading"><div><h2>Courses and programmes</h2><p>Configure the qualifications offered by this training centre.</p></div><small>${schoolProgrammes.length} configured</small></div><form id="programme-form"><div class="form-grid"><div class="field"><label for="programme-name">Programme name</label><input id="programme-name" name="name" maxlength="100" required placeholder="e.g. Commercial Cookery"></div><div class="field"><label for="programme-duration">Duration in months</label><input id="programme-duration" name="durationMonths" type="number" min="1" max="120" required placeholder="12"></div><div class="field"><label for="programme-qualification">Certificate or qualification</label><input id="programme-qualification" name="qualification" maxlength="100" required placeholder="e.g. Level 2 Certificate"></div></div><div class="form-actions"><button class="button">Add programme</button></div><div id="programme-error" class="error" role="alert"></div></form>${table(["Programme", "Duration", "Qualification", "Status", "Action"], schoolProgrammes.map((programme) => `<tr><td>${esc(programme.name)}</td><td>${programme.duration_months} months</td><td>${esc(programme.qualification)}</td><td><span class="badge">${esc(programme.status)}</span></td><td><button class="text-button remove-programme" data-id="${esc(programme.id)}" data-name="${esc(programme.name)}">Remove</button></td></tr>`).join(""))}</section>`
     : "";
@@ -1615,7 +1633,7 @@ function settings() {
         ? "Manage the school details, classes and fee types."
         : "Manage the school details, classes and fee types used in this demo.",
     ) +
-    `<div class="stack"><section class="panel"><form id="settings-form"><div class="form-grid"><div class="field"><label for="school">School display name</label><input name="school" id="school" value="${esc(state.settings.name)}" maxlength="80" required></div><div class="field"><label for="term-label">Term label</label><input name="term" id="term-label" value="${esc(state.settings.term)}" maxlength="60" required></div><div class="field"><label for="pass">Minimum D / pass score</label><input name="pass" id="pass" type="number" min="0" max="100" step="1" required value="${state.settings.pass}"></div><div class="field"><label for="grade-a">Minimum A score</label><input name="gradeA" id="grade-a" type="number" min="0" max="100" step="1" required value="${state.settings.gradeScale.A}"></div><div class="field"><label for="grade-b">Minimum B score</label><input name="gradeB" id="grade-b" type="number" min="0" max="100" step="1" required value="${state.settings.gradeScale.B}"></div><div class="field"><label for="grade-c">Minimum C score</label><input name="gradeC" id="grade-c" type="number" min="0" max="100" step="1" required value="${state.settings.gradeScale.C}"></div></div><div class="form-actions"><button class="button">Save settings</button></div><div class="error" id="form-error" role="alert"></div><div class="note">Grades follow the saved minimums. D starts at the pass score; anything below it is F.</div></form></section><section class="panel"><div class="panel-heading"><h2>Classes and grade levels</h2><small>${schoolClasses().length} configured</small></div><form id="class-form" class="toolbar"><input name="className" maxlength="60" required placeholder="e.g. Grade 10 · A" aria-label="New class name"><button class="button">Add class</button></form><div class="error" id="class-error" role="alert"></div>${table(
+    `<div class="stack"><section class="panel"><form id="settings-form"><div class="form-grid"><div class="field"><label for="school">School display name</label><input name="school" id="school" value="${esc(state.settings.name)}" maxlength="80" required></div><div class="field"><label for="term-label">Current academic period</label><input name="term" id="term-label" value="${esc(state.settings.academicYear)} · ${esc(state.settings.term)}" readonly><input type="hidden" name="currentTerm" value="${esc(state.settings.term)}"></div><div class="field"><label for="pass">Minimum D / pass score</label><input name="pass" id="pass" type="number" min="0" max="100" step="1" required value="${state.settings.pass}"></div><div class="field"><label for="grade-a">Minimum A score</label><input name="gradeA" id="grade-a" type="number" min="0" max="100" step="1" required value="${state.settings.gradeScale.A}"></div><div class="field"><label for="grade-b">Minimum B score</label><input name="gradeB" id="grade-b" type="number" min="0" max="100" step="1" required value="${state.settings.gradeScale.B}"></div><div class="field"><label for="grade-c">Minimum C score</label><input name="gradeC" id="grade-c" type="number" min="0" max="100" step="1" required value="${state.settings.gradeScale.C}"></div></div><div class="form-actions"><button class="button">Save settings</button></div><div class="error" id="form-error" role="alert"></div><div class="note">Grades follow the saved minimums. D starts at the pass score; anything below it is F. Use the academic-period section to change terms.</div></form></section>${academicPeriodSection}<section class="panel"><div class="panel-heading"><h2>Classes and grade levels</h2><small>${schoolClasses().length} configured</small></div><form id="class-form" class="toolbar"><input name="className" maxlength="60" required placeholder="e.g. Grade 10 · A" aria-label="New class name"><button class="button">Add class</button></form><div class="error" id="class-error" role="alert"></div>${table(
       ["Class", "Students", "Action"],
       schoolClasses()
         .map((name) => {
@@ -2721,6 +2739,44 @@ function wire() {
     $("#payment-print").onclick = printPaymentReport;
   }
   if (view === "settings") {
+    if ($("#academic-period-form")) {
+      $("#academic-period-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(e.target)),
+          button = e.target.querySelector("button[type='submit'], button:not([type])");
+        $("#academic-period-error").textContent = "";
+        if (
+          !confirm(
+            `Close ${state.settings.academicYear} · ${state.settings.term} and start ${data.academicYear} · ${data.term}?`,
+          )
+        )
+          return;
+        button.disabled = true;
+        try {
+          await schoolApi("/api/school/academic-periods", {
+            method: "POST",
+            body: JSON.stringify(data),
+          });
+          state.settings.academicYear = data.academicYear;
+          state.settings.term = data.term;
+          selectedResultTerm = data.term;
+          activeSchool = {
+            ...activeSchool,
+            academicYear: data.academicYear,
+            term: data.term,
+          };
+          await loadAcademicPeriods();
+          await loadResultTerms();
+          state.attendance = {};
+          attendanceDraft = null;
+          render();
+          toast("The new academic period is active. Previous records were preserved.");
+        } catch (err) {
+          $("#academic-period-error").textContent = err.message;
+          button.disabled = false;
+        }
+      };
+    }
     if ($("#cancellation-form")) {
       $("#cancellation-form").onsubmit = async (e) => {
         e.preventDefault();
@@ -2796,7 +2852,7 @@ function wire() {
       e.preventDefault();
       const f = new FormData(e.target),
         name = f.get("school").trim(),
-        term = f.get("term").trim(),
+        term = String(f.get("currentTerm") || f.get("term") || "").trim(),
         pass = Number(f.get("pass")),
         gradeScale = {
           A: Number(f.get("gradeA")),
@@ -3405,6 +3461,7 @@ async function showPortal(session) {
   setText("#role", isPlatformOwner ? "Platform Owner" : role);
   if (activeSchool) {
     state.settings.name = activeSchool.name;
+    state.settings.academicYear = activeSchool.academicYear;
     state.settings.term = activeSchool.term;
     selectedResultTerm = activeSchool.term;
     state.settings.pass = activeSchool.passMark;
@@ -3427,6 +3484,7 @@ async function showPortal(session) {
       await loadTimetable();
     }
     if (role === "Administrator") {
+      await loadAcademicPeriods();
       await loadSchoolStaff();
       await loadSchoolActivity();
       await loadProgrammes();
