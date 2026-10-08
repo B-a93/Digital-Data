@@ -1,4 +1,4 @@
-const CACHE_NAME = "school-portal-shell-v14";
+const CACHE_NAME = "school-portal-shell-v15";
 const APP_SHELL = [
   "/",
   "/style.css",
