@@ -130,6 +130,21 @@ test('dashboard action centre prioritises operational work by staff role',async(
  assert.match(style,/\.action-centre/);
  assert.match(style,/\.action-item\.urgent/);
 });
+test('administrator audit centre supports search filters and CSV export',async()=>{
+ const [server,app]=await Promise.all([
+  readFile('apps/school-web/server.mjs','utf8'),
+  readFile('apps/school-web/public/app.js','utf8'),
+ ]);
+ assert.match(server,/FROM audit_logs WHERE school_id=\$1 ORDER BY created_at DESC LIMIT 1000/);
+ assert.match(app,/Audit & activity centre/);
+ assert.match(app,/function filteredActivity\(\)/);
+ assert.match(app,/function downloadActivityCsv\(\)/);
+ assert.match(app,/All actions/);
+ assert.match(app,/All users/);
+ assert.match(app,/From date/);
+ assert.match(app,/Filtered audit log downloaded/);
+ assert.match(app,/Audit records are append-only/);
+});
 test('self-onboarding creates an invited workspace and starts trials only after activation',async()=>{
  const [server,schema,onboarding]=await Promise.all([
   readFile('apps/school-web/server.mjs','utf8'),
