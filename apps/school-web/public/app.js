@@ -835,7 +835,7 @@ function dashboard() {
         : "Welcome back. Here’s your fictional school workspace.",
       `<a class="button" href="#students">＋ Add a student</a>`,
     ) +
-    `<section class="dashboard-shortcuts" aria-labelledby="quick-actions-title"><div class="panel-heading"><div><h2 id="quick-actions-title">What would you like to do?</h2><p>Choose a common task to get started.</p></div></div><div class="shortcut-grid">${commonActions.map(([id, icon, label, help]) => `<a class="shortcut-card" href="#${id}"><span class="shortcut-icon" aria-hidden="true">${icon}</span><span><strong>${label}</strong><small>${help}</small></span><span aria-hidden="true">→</span></a>`).join("")}</div></section>${schoolSetupChecklist()}<div class="cards">${stats.map(([label, n, sub, icon]) => `<div class="card"><div class="card-label">${label}<span class="stat-icon" aria-hidden="true">${icon}</span></div><div class="number">${n}</div><small>${sub}</small></div>`).join("")}</div><div class="grid"><section class="panel"><div class="panel-heading"><h2>Student overview</h2><a class="text-button" href="#students">View all students →</a></div>${table(
+    `<section class="dashboard-shortcuts" aria-labelledby="quick-actions-title"><div class="panel-heading"><div><h2 id="quick-actions-title">What would you like to do?</h2><p>Choose a common task to get started.</p></div></div><div class="shortcut-grid">${commonActions.map(([id, icon, label, help]) => `<a class="shortcut-card" href="#${id}"><span class="shortcut-icon" aria-hidden="true">${icon}</span><span><strong>${label}</strong><small>${help}</small></span><span aria-hidden="true">→</span></a>`).join("")}</div></section>${operationsActionCentre()}${schoolSetupChecklist()}<div class="cards">${stats.map(([label, n, sub, icon]) => `<div class="card"><div class="card-label">${label}<span class="stat-icon" aria-hidden="true">${icon}</span></div><div class="number">${n}</div><small>${sub}</small></div>`).join("")}</div><div class="grid"><section class="panel"><div class="panel-heading"><h2>Student overview</h2><a class="text-button" href="#students">View all students →</a></div>${table(
       ["Student", "Class", "Fee status"],
       state.students
         .slice(0, 5)
@@ -872,6 +872,30 @@ function dashboard() {
         "",
       )}</div><p class="note">Demo view changes these shortcuts only. It does not enforce permissions.</p></section></div>`
   );
+}
+function operationsActionCentre() {
+  if (!schoolDataLive) return "";
+  const today = localDate(), actions = [],
+    dueFollowUps = guardianFollowUps.filter((item) => item.status === "open" && item.follow_up_on && String(item.follow_up_on).slice(0,10) <= today).length,
+    classStudents = activeStudents().filter((student) => student.class === selectedClass),
+    classMarks = state.attendance[today]?.marks || {},
+    unmarked = classStudents.filter((student) => !classMarks[student.id] || classMarks[student.id] === "unmarked").length;
+  if (dueFollowUps)
+    actions.push(["communications",dueFollowUps,"Guardian follow-ups due",`${dueFollowUps} open follow-up${dueFollowUps === 1 ? "" : "s"} require attention today or are overdue.`,"urgent"]);
+  if ((role === "Administrator" || role === "Teacher") && unmarked)
+    actions.push(["attendance",unmarked,`Attendance incomplete for ${selectedClass}`,`${unmarked} active student${unmarked === 1 ? "" : "s"} still unmarked for today.`,"urgent"]);
+  if (role === "Administrator") {
+    const pending = admissionApplications.filter((item) => item.status === "pending").length,
+      incomplete = studentDataQuality().missing.length;
+    if (pending) actions.push(["admissions",pending,"Admissions awaiting review",`${pending} application${pending === 1 ? "" : "s"} need approval or rejection.`,"normal"]);
+    if (incomplete) actions.push(["students",incomplete,"Student records need information",`${incomplete} record${incomplete === 1 ? "" : "s"} are missing important identity or guardian details.`,"normal"]);
+  }
+  if (role === "Administrator" || role === "Finance") {
+    const overdueStudents = new Set(state.charges.filter((charge) => charge.dueDate && charge.dueDate < today && balance(state,charge.studentId) > 0).map((charge) => charge.studentId));
+    if (overdueStudents.size)
+      actions.push(["fees",overdueStudents.size,"Overdue student balances",`${overdueStudents.size} student${overdueStudents.size === 1 ? "" : "s"} have unpaid charges past their due date.`,"urgent"]);
+  }
+  return `<section class="action-centre" aria-labelledby="action-centre-title"><div class="panel-heading"><div><span class="eyebrow">PRIORITIES</span><h2 id="action-centre-title">Operations action centre</h2><p>${actions.length ? "Work that needs attention now, based on your access." : "No urgent actions are currently waiting."}</p></div><span class="badge ${actions.some((item) => item[4] === "urgent") ? "amber" : "gray"}">${actions.length} action${actions.length === 1 ? "" : "s"}</span></div>${actions.length ? `<div class="action-list">${actions.map(([page,count,title,description,priority]) => `<a href="#${page}" class="action-item ${priority}"><span class="action-count">${count}</span><span><strong>${esc(title)}</strong><small>${esc(description)}</small></span><span class="action-open">Open →</span></a>`).join("")}</div>` : '<div class="action-clear"><span aria-hidden="true">✓</span><strong>You’re up to date</strong><small>New priorities will appear here automatically.</small></div>'}</section>`;
 }
 function printStudentIdCards() {
   const students = activeStudents().filter(
