@@ -526,6 +526,8 @@ const server = http.createServer(async (req, res) => {
         staff,
         activity,
         academicPeriods,
+        paymentAdjustments,
+        feeAdjustments,
       ] = await Promise.all([
         query(
           `SELECT id,name,slug,current_academic_year,current_term,pass_mark,grade_scale,school_type,region,district,
@@ -600,6 +602,16 @@ const server = http.createServer(async (req, res) => {
            FROM academic_periods WHERE school_id=$1 ORDER BY opened_at`,
           [context.school_id],
         ),
+        query(
+          `SELECT id,payment_id,adjustment_type,amount_bututs,reason,recorded_by,created_at
+           FROM payment_adjustments WHERE school_id=$1 ORDER BY created_at`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT id,charge_id,adjustment_type,amount_bututs,reason,recorded_by,created_at
+           FROM fee_adjustments WHERE school_id=$1 ORDER BY created_at`,
+          [context.school_id],
+        ),
       ]);
       const backup = {
         format: "digital-data-school-backup",
@@ -620,6 +632,8 @@ const server = http.createServer(async (req, res) => {
         staff: staff.rows,
         activity: activity.rows,
         academicPeriods: academicPeriods.rows,
+        paymentAdjustments: paymentAdjustments.rows,
+        feeAdjustments: feeAdjustments.rows,
       };
       await recordAudit(
         context,
@@ -1794,19 +1808,39 @@ const server = http.createServer(async (req, res) => {
         json(res, 405, { error: "Method not allowed" });
         return;
       }
-      const [feeTypes, charges, payments] = await Promise.all([
+      const [feeTypes, charges, payments, paymentAdjustments, feeAdjustments] = await Promise.all([
         query(
           `SELECT id,name FROM fee_types WHERE school_id=$1 ORDER BY name`,
           [context.school_id],
         ),
         query(
-          `SELECT fc.id,fc.student_id,fc.description,fc.amount_bututs,fc.created_at
-           FROM fee_charges fc WHERE fc.school_id=$1 ORDER BY fc.created_at`,
+          `SELECT fc.id,fc.student_id,fc.description,fc.amount_bututs AS original_amount_bututs,
+                  GREATEST(0,fc.amount_bututs-COALESCE(SUM(fa.amount_bututs),0)) AS amount_bututs,
+                  fc.due_date,fc.academic_year,fc.term,fc.created_at
+           FROM fee_charges fc LEFT JOIN fee_adjustments fa ON fa.charge_id=fc.id
+           WHERE fc.school_id=$1 GROUP BY fc.id ORDER BY fc.created_at`,
           [context.school_id],
         ),
         query(
-          `SELECT p.id,p.student_id,p.amount_bututs,p.receipt_number,p.paid_on,p.created_at
-           FROM payments p WHERE p.school_id=$1 ORDER BY p.created_at`,
+          `SELECT p.id,p.student_id,p.amount_bututs AS original_amount_bututs,
+                  GREATEST(0,p.amount_bututs-COALESCE(SUM(pa.amount_bututs),0)) AS amount_bututs,
+                  p.receipt_number,p.paid_on,p.academic_year,p.term,p.created_at,
+                  CASE WHEN COALESCE(SUM(pa.amount_bututs),0)=0 THEN 'recorded'
+                       WHEN COALESCE(SUM(pa.amount_bututs),0)>=p.amount_bututs AND BOOL_OR(pa.adjustment_type='void') THEN 'voided'
+                       WHEN COALESCE(SUM(pa.amount_bututs),0)>=p.amount_bututs THEN 'refunded'
+                       ELSE 'partially_refunded' END AS status
+           FROM payments p LEFT JOIN payment_adjustments pa ON pa.payment_id=p.id
+           WHERE p.school_id=$1 GROUP BY p.id ORDER BY p.created_at`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT pa.id,pa.payment_id,pa.adjustment_type,pa.amount_bututs,pa.reason,pa.created_at
+           FROM payment_adjustments pa WHERE pa.school_id=$1 ORDER BY pa.created_at DESC`,
+          [context.school_id],
+        ),
+        query(
+          `SELECT fa.id,fa.charge_id,fa.adjustment_type,fa.amount_bututs,fa.reason,fa.created_at
+           FROM fee_adjustments fa WHERE fa.school_id=$1 ORDER BY fa.created_at DESC`,
           [context.school_id],
         ),
       ]);
@@ -1814,6 +1848,8 @@ const server = http.createServer(async (req, res) => {
         feeTypes: feeTypes.rows,
         charges: charges.rows,
         payments: payments.rows,
+        paymentAdjustments: paymentAdjustments.rows,
+        feeAdjustments: feeAdjustments.rows,
       });
       return;
     }
@@ -1827,12 +1863,14 @@ const server = http.createServer(async (req, res) => {
       const data = await readJsonBody(req),
         studentId = String(data.studentId || ""),
         description = String(data.description || "").trim(),
-        amount = Number(data.amountBututs);
+        amount = Number(data.amountBututs),
+        dueDate = String(data.dueDate || "").trim();
       if (
         !/^[0-9a-f-]{36}$/.test(studentId) ||
         !description ||
         !Number.isSafeInteger(amount) ||
-        amount <= 0
+        amount <= 0 ||
+        (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate))
       ) {
         json(res, 400, { error: "Enter a valid charge." });
         return;
@@ -1855,10 +1893,10 @@ const server = http.createServer(async (req, res) => {
         ).rows[0];
         return (
           await client.query(
-            `INSERT INTO fee_charges(school_id,student_id,fee_type_id,description,amount_bututs,academic_year,term)
-             SELECT $1,$2,$3,$4,$5,current_academic_year,current_term FROM schools WHERE id=$1
+            `INSERT INTO fee_charges(school_id,student_id,fee_type_id,description,amount_bututs,academic_year,term,due_date)
+             SELECT $1,$2,$3,$4,$5,current_academic_year,current_term,$6::date FROM schools WHERE id=$1
              RETURNING id,student_id,description,amount_bututs,academic_year,term,due_date,created_at`,
-            [context.school_id, studentId, feeType.id, description, amount],
+            [context.school_id, studentId, feeType.id, description, amount, dueDate || null],
           )
         ).rows[0];
       });
@@ -1866,6 +1904,7 @@ const server = http.createServer(async (req, res) => {
         studentId,
         description,
         amountBututs: amount,
+        dueDate: dueDate || null,
       });
       json(res, 201, { charge });
       return;
@@ -1880,12 +1919,14 @@ const server = http.createServer(async (req, res) => {
       const data = await readJsonBody(req),
         className = String(data.className || "").trim(),
         description = String(data.description || "").trim(),
-        amount = Number(data.amountBututs);
+        amount = Number(data.amountBututs),
+        dueDate = String(data.dueDate || "").trim();
       if (
         !className ||
         !description ||
         !Number.isSafeInteger(amount) ||
-        amount <= 0
+        amount <= 0 ||
+        (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate))
       ) {
         json(res, 400, { error: "Choose a class, fee type and valid amount." });
         return;
@@ -1919,9 +1960,9 @@ const server = http.createServer(async (req, res) => {
         ).rows[0];
         for (const student of students)
           await client.query(
-            `INSERT INTO fee_charges(school_id,student_id,fee_type_id,description,amount_bututs,academic_year,term)
-             SELECT $1,$2,$3,$4,$5,current_academic_year,current_term FROM schools WHERE id=$1`,
-            [context.school_id, student.id, feeType.id, description, amount],
+            `INSERT INTO fee_charges(school_id,student_id,fee_type_id,description,amount_bututs,academic_year,term,due_date)
+             SELECT $1,$2,$3,$4,$5,current_academic_year,current_term,$6::date FROM schools WHERE id=$1`,
+            [context.school_id, student.id, feeType.id, description, amount, dueDate || null],
           );
         return students.length;
       });
@@ -1929,6 +1970,7 @@ const server = http.createServer(async (req, res) => {
         className,
         description,
         amountBututs: amount,
+        dueDate: dueDate || null,
         students: result,
       });
       json(res, 201, { charged: result });
@@ -1987,6 +2029,131 @@ const server = http.createServer(async (req, res) => {
         receiptNumber: payment.receipt_number,
       });
       json(res, 201, { payment });
+      return;
+    }
+    const paymentAdjustmentRoute = pathname.match(
+      /^\/api\/school\/payments\/([0-9a-f-]{36})\/adjustments$/,
+    );
+    if (paymentAdjustmentRoute) {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator", "finance");
+      if (req.method !== "POST") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const data = await readJsonBody(req),
+        adjustmentType = String(data.adjustmentType || ""),
+        requestedAmount = Number(data.amountBututs),
+        reason = String(data.reason || "").trim();
+      if (
+        !["refund", "void"].includes(adjustmentType) ||
+        reason.length < 3 ||
+        reason.length > 300 ||
+        (adjustmentType === "refund" &&
+          (!Number.isSafeInteger(requestedAmount) || requestedAmount <= 0))
+      ) {
+        json(res, 400, { error: "Choose a valid correction and enter a reason." });
+        return;
+      }
+      const adjustment = await transaction(async (client) => {
+        const payment = (
+          await client.query(
+            `SELECT p.id,p.amount_bututs,p.receipt_number,
+                    COALESCE((SELECT SUM(amount_bututs) FROM payment_adjustments WHERE payment_id=p.id),0)::bigint AS adjusted_bututs
+             FROM payments p WHERE p.id=$1 AND p.school_id=$2 FOR UPDATE`,
+            [paymentAdjustmentRoute[1], context.school_id],
+          )
+        ).rows[0];
+        if (!payment)
+          throw Object.assign(new Error("Payment not found."), { status: 404 });
+        const remaining = Number(payment.amount_bututs) - Number(payment.adjusted_bututs),
+          amount = adjustmentType === "void" ? remaining : requestedAmount;
+        if (!Number.isSafeInteger(amount) || amount <= 0 || amount > remaining)
+          throw Object.assign(
+            new Error("The correction cannot exceed the unadjusted payment amount."),
+            { status: 409 },
+          );
+        const row = (
+          await client.query(
+            `INSERT INTO payment_adjustments(school_id,payment_id,adjustment_type,amount_bututs,reason,recorded_by)
+             VALUES($1,$2,$3,$4,$5,$6)
+             RETURNING id,payment_id,adjustment_type,amount_bututs,reason,created_at`,
+            [context.school_id, payment.id, adjustmentType, amount, reason, context.id],
+          )
+        ).rows[0];
+        return { ...row, receiptNumber: payment.receipt_number };
+      });
+      await recordAudit(
+        context,
+        `payment.${adjustmentType === "void" ? "voided" : "refunded"}`,
+        "payment",
+        paymentAdjustmentRoute[1],
+        {
+          receiptNumber: adjustment.receiptNumber,
+          amountBututs: Number(adjustment.amount_bututs),
+          reason,
+        },
+      );
+      json(res, 201, { adjustment });
+      return;
+    }
+    const feeAdjustmentRoute = pathname.match(
+      /^\/api\/school\/charges\/([0-9a-f-]{36})\/adjustments$/,
+    );
+    if (feeAdjustmentRoute) {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator", "finance");
+      if (req.method !== "POST") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const data = await readJsonBody(req),
+        adjustmentType = String(data.adjustmentType || ""),
+        amount = Number(data.amountBututs),
+        reason = String(data.reason || "").trim();
+      if (
+        !["waiver", "discount"].includes(adjustmentType) ||
+        !Number.isSafeInteger(amount) ||
+        amount <= 0 ||
+        reason.length < 3 ||
+        reason.length > 300
+      ) {
+        json(res, 400, { error: "Enter a valid waiver or discount and reason." });
+        return;
+      }
+      const adjustment = await transaction(async (client) => {
+        const charge = (
+          await client.query(
+            `SELECT fc.id,fc.amount_bututs,fc.description,
+                    COALESCE((SELECT SUM(amount_bututs) FROM fee_adjustments WHERE charge_id=fc.id),0)::bigint AS adjusted_bututs
+             FROM fee_charges fc WHERE fc.id=$1 AND fc.school_id=$2 FOR UPDATE`,
+            [feeAdjustmentRoute[1], context.school_id],
+          )
+        ).rows[0];
+        if (!charge)
+          throw Object.assign(new Error("Charge not found."), { status: 404 });
+        const remaining = Number(charge.amount_bututs) - Number(charge.adjusted_bututs);
+        if (amount > remaining)
+          throw Object.assign(
+            new Error("The waiver or discount cannot exceed the remaining charge."),
+            { status: 409 },
+          );
+        const row = (
+          await client.query(
+            `INSERT INTO fee_adjustments(school_id,charge_id,adjustment_type,amount_bututs,reason,recorded_by)
+             VALUES($1,$2,$3,$4,$5,$6)
+             RETURNING id,charge_id,adjustment_type,amount_bututs,reason,created_at`,
+            [context.school_id, charge.id, adjustmentType, amount, reason, context.id],
+          )
+        ).rows[0];
+        return { ...row, description: charge.description };
+      });
+      await recordAudit(context, `charge.${adjustmentType}`, "charge", feeAdjustmentRoute[1], {
+        description: adjustment.description,
+        amountBututs: Number(adjustment.amount_bututs),
+        reason,
+      });
+      json(res, 201, { adjustment });
       return;
     }
     if (pathname === "/api/school/attendance") {

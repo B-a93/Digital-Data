@@ -584,15 +584,25 @@ async function loadSchoolFinance() {
     studentId: charge.student_id,
     label: charge.description,
     amount: Number(charge.amount_bututs),
+    originalAmount: Number(charge.original_amount_bututs),
+    dueDate: charge.due_date ? String(charge.due_date).slice(0, 10) : "",
+    academicYear: charge.academic_year,
+    term: charge.term,
     createdAt: charge.created_at,
   }));
   state.payments = data.payments.map((payment) => ({
     id: payment.id,
     studentId: payment.student_id,
     amount: Number(payment.amount_bututs),
+    originalAmount: Number(payment.original_amount_bututs),
     reference: payment.receipt_number,
     date: String(payment.paid_on).slice(0, 10),
+    status: payment.status || "recorded",
+    academicYear: payment.academic_year,
+    term: payment.term,
   }));
+  state.paymentAdjustments = data.paymentAdjustments || [];
+  state.feeAdjustments = data.feeAdjustments || [];
 }
 async function loadSchoolStaff() {
   schoolStaff = (await schoolApi("/api/school/staff")).staff;
@@ -1090,6 +1100,25 @@ function downloadAttendanceCsv() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   toast("Attendance CSV downloaded.");
 }
+function financeAdjustmentPanels() {
+  if (!schoolDataLive) return "";
+  const refundable = state.payments.filter((payment) => payment.amount > 0),
+    adjustableCharges = state.charges.filter((charge) => charge.amount > 0);
+  return `<section class="panel wide"><div class="panel-heading"><div><h2>Payment corrections and refunds</h2><p>Original receipts remain in the audit trail. A correction reduces their effective value without deleting them.</p></div><span class="badge gray">Audited</span></div><form id="payment-adjustment-form"><div class="form-grid"><div class="field"><label for="adjustment-payment">Receipt</label><select id="adjustment-payment" name="paymentId" required>${refundable.map((payment) => `<option value="${esc(payment.id)}">${esc(payment.reference)} · ${esc(state.students.find((student) => student.id === payment.studentId)?.name || "Student")} · ${money(payment.amount)} available</option>`).join("")}</select></div><div class="field"><label for="payment-adjustment-type">Action</label><select id="payment-adjustment-type" name="adjustmentType"><option value="refund">Record full or partial refund</option><option value="void">Void remaining payment</option></select></div><div class="field"><label for="refund-amount">Refund amount in dalasi</label><input id="refund-amount" name="amount" inputmode="decimal" placeholder="Required for refund"></div><div class="field"><label for="payment-adjustment-reason">Reason</label><input id="payment-adjustment-reason" name="reason" minlength="3" maxlength="300" required placeholder="e.g. Duplicate receipt corrected"></div></div><div class="form-actions"><button class="button secondary" ${refundable.length ? "" : "disabled"}>Save payment correction</button></div><div class="note">To correct the amount or student on a receipt, void the incorrect receipt and record a new payment.</div><div id="payment-adjustment-error" class="error" role="alert"></div></form></section><section class="panel wide"><div class="panel-heading"><div><h2>Fee waivers and discounts</h2><p>Reduce an individual charge while keeping the original amount and reason visible in the audit trail.</p></div><span class="badge gray">Audited</span></div><form id="fee-adjustment-form"><div class="form-grid"><div class="field"><label for="adjustment-charge">Charge</label><select id="adjustment-charge" name="chargeId" required>${adjustableCharges.map((charge) => `<option value="${esc(charge.id)}">${esc(state.students.find((student) => student.id === charge.studentId)?.name || "Student")} · ${esc(charge.label)} · ${money(charge.amount)} remaining</option>`).join("")}</select></div><div class="field"><label for="fee-adjustment-type">Adjustment</label><select id="fee-adjustment-type" name="adjustmentType"><option value="waiver">Waiver</option><option value="discount">Discount</option></select></div><div class="field"><label for="fee-adjustment-amount">Amount in dalasi</label><input id="fee-adjustment-amount" name="amount" inputmode="decimal" required placeholder="Enter reduction"></div><div class="field"><label for="fee-adjustment-reason">Reason</label><input id="fee-adjustment-reason" name="reason" minlength="3" maxlength="300" required placeholder="e.g. Approved hardship support"></div></div><div class="form-actions"><button class="button secondary" ${adjustableCharges.length ? "" : "disabled"}>Apply adjustment</button></div><div id="fee-adjustment-error" class="error" role="alert"></div></form></section>`;
+}
+function chargeLedgerPanel() {
+  const rows = state.charges
+    .slice()
+    .reverse()
+    .slice(0, 25)
+    .map((charge) => {
+      const overdue = charge.dueDate && charge.dueDate < localDate() && charge.amount > 0,
+        adjusted = charge.originalAmount !== charge.amount;
+      return `<tr><td>${esc(state.students.find((student) => student.id === charge.studentId)?.name || "Student")}</td><td>${esc(charge.label)}<span class="sub">${esc(charge.academicYear || state.settings.academicYear)} · ${esc(charge.term || state.settings.term)}</span></td><td>${charge.dueDate ? esc(charge.dueDate) : "No due date"}</td><td>${money(charge.amount)}${adjusted ? `<span class="sub">Original: ${money(charge.originalAmount)}</span>` : ""}</td><td><span class="badge ${overdue ? "amber" : adjusted ? "gray" : ""}">${overdue ? "Overdue" : adjusted ? "Adjusted" : "Open"}</span></td></tr>`;
+    })
+    .join("");
+  return `<section class="panel wide"><div class="panel-heading"><div><h2>Charge ledger and due dates</h2><p>Review recent fees, adjusted amounts and overdue dates.</p></div><small>Latest ${Math.min(state.charges.length, 25)}</small></div>${table(["Student", "Fee", "Due date", "Effective amount", "Status"], rows)}</section>`;
+}
 function fees() {
   return (
     heading(
@@ -1098,7 +1127,7 @@ function fees() {
         ? "Review charges, record receipts and see outstanding balances."
         : "Review charges, record demo receipts and see outstanding balances.",
     ) +
-    `<div class="grid"><section class="panel"><div class="panel-heading"><h2>Record ${schoolDataLive ? "a" : "a demo"} payment</h2></div><form id="payment-form"><div class="field"><label for="pay-student">Student</label><select id="pay-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)} · ${esc(s.admission)}</option>`).join("")}</select></div><div class="field"><label for="amount">Amount in dalasi</label><input id="amount" name="amount" type="text" inputmode="decimal" required placeholder="1500.00"></div><div class="note">Overpayment becomes a displayed credit, not an automatic refund.</div><div class="form-actions"><button class="button">Record payment</button></div><div id="form-error" class="error" role="alert"></div><div id="receipt" role="status"></div></form></section><section class="panel"><div class="panel-heading"><h2>Add ${schoolDataLive ? "a" : "a demo"} charge</h2></div><form id="charge-form"><div class="field"><label for="charge-student">Student</label><select id="charge-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div><div class="field"><label for="charge-label">Fee type</label><select id="charge-label" name="label">${options(state.settings.feeTypes, state.settings.feeTypes[0])}</select></div><div class="field"><label for="charge-amount">Amount in dalasi</label><input id="charge-amount" name="amount" inputmode="decimal" required placeholder="1500.00"></div><div class="form-actions"><button class="button secondary">Add charge</button></div><div id="charge-error" class="error" role="alert"></div></form></section><section class="panel wide"><div class="panel-heading"><div><h2>Charge an entire class</h2><p>Apply the same fee to every active student in a class.</p></div></div><form id="class-charge-form"><div class="form-grid"><div class="field"><label for="class-charge-class">Class</label><select id="class-charge-class" name="className">${options(schoolClasses(), schoolClasses()[0])}</select></div><div class="field"><label for="class-charge-label">Fee type</label><select id="class-charge-label" name="label">${options(state.settings.feeTypes, state.settings.feeTypes[0])}</select></div><div class="field"><label for="class-charge-amount">Amount per student in dalasi</label><input id="class-charge-amount" name="amount" inputmode="decimal" required placeholder="1500.00"></div></div><div class="form-actions"><button class="button secondary">Apply class charge</button><span class="status-text">Only active students will be charged.</span></div><div id="class-charge-error" class="error" role="alert"></div></form></section><section class="panel wide"><div class="panel-heading"><h2>Student balances</h2><small>Negative balance = credit</small></div>${table(["Student", "Class", "Balance", "Status", "Action"], state.students.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td>${money(balance(state, s.id))}</td><td>${badge(balance(state, s.id))}</td><td><button class="text-button print-statement" data-id="${esc(s.id)}">Print statement</button>${balance(state, s.id) > 0 && s.guardianPhone ? ` · <button class="text-button whatsapp-reminder" data-id="${esc(s.id)}">WhatsApp reminder</button>` : ""}</td></tr>`).join(""))}</section><section class="panel wide"><div class="panel-heading"><h2>Recent ${schoolDataLive ? "" : "demo "}receipts</h2></div>${table(
+    `<div class="grid"><section class="panel"><div class="panel-heading"><h2>Record ${schoolDataLive ? "a" : "a demo"} payment</h2></div><form id="payment-form"><div class="field"><label for="pay-student">Student</label><select id="pay-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)} · ${esc(s.admission)}</option>`).join("")}</select></div><div class="field"><label for="amount">Amount in dalasi</label><input id="amount" name="amount" type="text" inputmode="decimal" required placeholder="1500.00"></div><div class="note">Overpayment becomes a displayed credit, not an automatic refund.</div><div class="form-actions"><button class="button">Record payment</button></div><div id="form-error" class="error" role="alert"></div><div id="receipt" role="status"></div></form></section><section class="panel"><div class="panel-heading"><h2>Add ${schoolDataLive ? "a" : "a demo"} charge</h2></div><form id="charge-form"><div class="field"><label for="charge-student">Student</label><select id="charge-student" name="student">${state.students.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div><div class="field"><label for="charge-label">Fee type</label><select id="charge-label" name="label">${options(state.settings.feeTypes, state.settings.feeTypes[0])}</select></div><div class="field"><label for="charge-amount">Amount in dalasi</label><input id="charge-amount" name="amount" inputmode="decimal" required placeholder="1500.00"></div><div class="field"><label for="charge-due-date">Due date (optional)</label><input id="charge-due-date" name="dueDate" type="date"></div><div class="form-actions"><button class="button secondary">Add charge</button></div><div id="charge-error" class="error" role="alert"></div></form></section><section class="panel wide"><div class="panel-heading"><div><h2>Charge an entire class</h2><p>Apply the same fee to every active student in a class.</p></div></div><form id="class-charge-form"><div class="form-grid"><div class="field"><label for="class-charge-class">Class</label><select id="class-charge-class" name="className">${options(schoolClasses(), schoolClasses()[0])}</select></div><div class="field"><label for="class-charge-label">Fee type</label><select id="class-charge-label" name="label">${options(state.settings.feeTypes, state.settings.feeTypes[0])}</select></div><div class="field"><label for="class-charge-amount">Amount per student in dalasi</label><input id="class-charge-amount" name="amount" inputmode="decimal" required placeholder="1500.00"></div><div class="field"><label for="class-charge-due-date">Due date (optional)</label><input id="class-charge-due-date" name="dueDate" type="date"></div></div><div class="form-actions"><button class="button secondary">Apply class charge</button><span class="status-text">Only active students will be charged.</span></div><div id="class-charge-error" class="error" role="alert"></div></form></section>${financeAdjustmentPanels()}${chargeLedgerPanel()}<section class="panel wide"><div class="panel-heading"><h2>Student balances</h2><small>Negative balance = credit</small></div>${table(["Student", "Class", "Balance", "Status", "Action"], state.students.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td>${money(balance(state, s.id))}</td><td>${badge(balance(state, s.id))}</td><td><button class="text-button print-statement" data-id="${esc(s.id)}">Print statement</button>${balance(state, s.id) > 0 && s.guardianPhone ? ` · <button class="text-button whatsapp-reminder" data-id="${esc(s.id)}">WhatsApp reminder</button>` : ""}</td></tr>`).join(""))}</section><section class="panel wide"><div class="panel-heading"><h2>Recent ${schoolDataLive ? "" : "demo "}receipts</h2></div>${table(
       ["Receipt", "Student", "Date", "Amount", "Action"],
       state.payments
         .slice()
@@ -1106,7 +1135,7 @@ function fees() {
         .slice(0, 10)
         .map(
           (p) =>
-            `<tr><td>${esc(p.reference)}</td><td>${esc(state.students.find((s) => s.id === p.studentId)?.name)}</td><td>${esc(p.date)}</td><td>${money(p.amount)}</td><td><button class="text-button print-receipt" data-id="${esc(p.id)}">Print receipt</button></td></tr>`,
+            `<tr><td>${esc(p.reference)}${p.status && p.status !== "recorded" ? `<span class="sub">${esc(p.status.replaceAll("_", " "))}</span>` : ""}</td><td>${esc(state.students.find((s) => s.id === p.studentId)?.name)}</td><td>${esc(p.date)}</td><td>${money(p.amount)}${p.originalAmount !== p.amount ? `<span class="sub">Original: ${money(p.originalAmount)}</span>` : ""}</td><td><button class="text-button print-receipt" data-id="${esc(p.id)}">Print receipt</button></td></tr>`,
         )
         .join(""),
     )}</section><section class="panel wide"><div class="panel-heading"><div><h2>Payment Status Report</h2><p>Print students with outstanding payments separately from students who are fully paid.</p></div><span class="badge gray">${esc(state.settings.term)}</span></div><div class="quick-actions"><button class="button" id="outstanding-print">Print outstanding students</button><button class="button secondary" id="paid-print">Print fully-paid students</button><button class="button secondary" id="payment-print">Print complete report</button><button class="button secondary" id="payment-excel">Download Excel</button></div><div class="note">Each report includes student name, student number, class, charges, amount paid and balance.</div></section></div>`
@@ -1126,7 +1155,7 @@ function printReceipt(paymentId) {
     return;
   }
   popup.document.write(
-    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(payment.reference)}</title><style>@page{size:A5 portrait;margin:14mm}body{font:14px Arial;color:#203330;margin:0;padding:24px}.receipt{max-width:620px;margin:auto;border:1px solid #dce6e1;border-radius:12px;padding:30px}header{border-bottom:3px solid #146a56;padding-bottom:16px;margin-bottom:22px}h1{margin:0 0 6px;font-size:24px}.brand{color:#146a56;font-weight:bold}.row{display:flex;justify-content:space-between;gap:20px;padding:10px 0;border-bottom:1px solid #edf1ef}.amount{font-size:26px;font-weight:bold;color:#146a56}.foot{margin-top:24px;color:#60736d;font-size:11px;line-height:1.5}button{margin-top:20px;padding:10px 15px;background:#146a56;color:white;border:0;border-radius:6px}@media print{button{display:none}body{padding:0}.receipt{border:0}}</style></head><body><div class="receipt"><header><div class="brand">${esc(state.settings.name)}</div><h1>Payment receipt</h1><div>${esc(state.settings.term)}</div></header><div class="row"><span>Receipt number</span><strong>${esc(payment.reference)}</strong></div><div class="row"><span>Date</span><strong>${esc(payment.date)}</strong></div><div class="row"><span>Student</span><strong>${esc(student.name)}</strong></div><div class="row"><span>Student number</span><strong>${esc(student.admission)}</strong></div><div class="row"><span>Class</span><strong>${esc(student.class)}</strong></div><div class="row"><span>Amount received</span><strong class="amount">${money(payment.amount)}</strong></div><div class="row"><span>Current balance</span><strong>${money(balance(state, student.id))}</strong></div><p class="foot">Generated by the School Management Portal by Elegant Empire AI. Keep this receipt for the school’s and payer’s records.</p><button onclick="window.print()">Print or save as PDF</button></div></body></html>`,
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(payment.reference)}</title><style>@page{size:A5 portrait;margin:14mm}body{font:14px Arial;color:#203330;margin:0;padding:24px}.receipt{max-width:620px;margin:auto;border:1px solid #dce6e1;border-radius:12px;padding:30px}header{border-bottom:3px solid #146a56;padding-bottom:16px;margin-bottom:22px}h1{margin:0 0 6px;font-size:24px}.brand{color:#146a56;font-weight:bold}.row{display:flex;justify-content:space-between;gap:20px;padding:10px 0;border-bottom:1px solid #edf1ef}.amount{font-size:26px;font-weight:bold;color:#146a56}.foot{margin-top:24px;color:#60736d;font-size:11px;line-height:1.5}button{margin-top:20px;padding:10px 15px;background:#146a56;color:white;border:0;border-radius:6px}@media print{button{display:none}body{padding:0}.receipt{border:0}}</style></head><body><div class="receipt"><header><div class="brand">${esc(state.settings.name)}</div><h1>Payment receipt</h1><div>${esc(payment.academicYear || state.settings.academicYear)} · ${esc(payment.term || state.settings.term)}</div></header><div class="row"><span>Receipt number</span><strong>${esc(payment.reference)}</strong></div><div class="row"><span>Date</span><strong>${esc(payment.date)}</strong></div><div class="row"><span>Student</span><strong>${esc(student.name)}</strong></div><div class="row"><span>Student number</span><strong>${esc(student.admission)}</strong></div><div class="row"><span>Class</span><strong>${esc(student.class)}</strong></div><div class="row"><span>Amount originally received</span><strong class="amount">${money(payment.originalAmount ?? payment.amount)}</strong></div>${payment.originalAmount !== payment.amount ? `<div class="row"><span>Adjusted status</span><strong>${esc((payment.status || "adjusted").replaceAll("_", " "))} · ${money(payment.amount)} effective</strong></div>` : ""}<div class="row"><span>Current balance</span><strong>${money(balance(state, student.id))}</strong></div><p class="foot">Generated by the School Management Portal by Elegant Empire AI. Corrections and refunds do not delete the original receipt and remain in the school audit log.</p><button onclick="window.print()">Print or save as PDF</button></div></body></html>`,
   );
   popup.document.close();
 }
@@ -1150,20 +1179,20 @@ function printStudentStatement(studentId) {
     ...charges.map((item) => ({
       date: item.createdAt ? String(item.createdAt).slice(0, 10) : "—",
       type: "Charge",
-      reference: item.label,
+      reference: `${item.label}${item.dueDate ? ` · Due ${item.dueDate}` : ""}${item.originalAmount !== item.amount ? ` · Adjusted from ${money(item.originalAmount)}` : ""}`,
       charge: item.amount,
       payment: 0,
     })),
     ...payments.map((item) => ({
       date: item.date || "—",
       type: "Payment",
-      reference: item.reference,
+      reference: `${item.reference}${item.status && item.status !== "recorded" ? ` · ${item.status.replaceAll("_", " ")}` : ""}`,
       charge: 0,
       payment: item.amount,
     })),
   ].sort((a, b) => String(a.date).localeCompare(String(b.date)));
   popup.document.write(
-    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(student.admission)} Fee Statement</title><style>@page{size:A4 portrait;margin:14mm}body{font:12px Arial;color:#203330;margin:0;padding:16px}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:20px}h1{margin:0 0 6px}.details{display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;margin-bottom:20px}.summary{display:flex;gap:14px;flex-wrap:wrap;margin:16px 0}.summary span{padding:8px 11px;background:#edf5ef;border-radius:5px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce6e1;text-align:left}th{background:#eaf4ef}td:nth-child(n+4),th:nth-child(n+4){text-align:right}.balance{font-weight:bold;color:${currentBalance > 0 ? "#956f22" : "#146a56"}}button{margin:18px 0;padding:10px 15px;background:#146a56;color:#fff;border:0;border-radius:6px}@media(max-width:600px){.details{grid-template-columns:1fr}body{overflow-x:auto}table{min-width:650px}}@media print{button{display:none}body{padding:0}}</style></head><body><header><h1>${esc(state.settings.name)}</h1><div>Student fee statement · ${esc(state.settings.term)}</div></header><div class="details"><div><strong>Student:</strong> ${esc(student.name)}</div><div><strong>Student number:</strong> ${esc(student.admission)}</div><div><strong>Class:</strong> ${esc(student.class)}</div><div><strong>Status:</strong> ${esc(student.status || "active")}</div><div><strong>Guardian:</strong> ${esc(student.guardianName || "—")}</div><div><strong>Guardian phone:</strong> ${esc(student.guardianPhone || "—")}</div></div><div class="summary"><span>Total charges: ${money(totalCharges)}</span><span>Total paid: ${money(totalPayments)}</span><span class="balance">${currentBalance > 0 ? "Outstanding" : currentBalance < 0 ? "Credit" : "Balance"}: ${money(Math.abs(currentBalance))}</span></div><table><thead><tr><th>Date</th><th>Type</th><th>Description or receipt</th><th>Charge</th><th>Payment</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${esc(row.date)}</td><td>${esc(row.type)}</td><td>${esc(row.reference)}</td><td>${row.charge ? money(row.charge) : "—"}</td><td>${row.payment ? money(row.payment) : "—"}</td></tr>`).join("") || '<tr><td colspan="5">No financial transactions recorded.</td></tr>'}</tbody><tfoot><tr><th colspan="3">Totals</th><th>${money(totalCharges)}</th><th>${money(totalPayments)}</th></tr></tfoot></table><button onclick="window.print()">Print or save as PDF</button></body></html>`,
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(student.admission)} Fee Statement</title><style>@page{size:A4 portrait;margin:14mm}body{font:12px Arial;color:#203330;margin:0;padding:16px}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:20px}h1{margin:0 0 6px}.details{display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;margin-bottom:20px}.summary{display:flex;gap:14px;flex-wrap:wrap;margin:16px 0}.summary span{padding:8px 11px;background:#edf5ef;border-radius:5px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce6e1;text-align:left}th{background:#eaf4ef}td:nth-child(n+4),th:nth-child(n+4){text-align:right}.balance{font-weight:bold;color:${currentBalance > 0 ? "#956f22" : "#146a56"}}button{margin:18px 0;padding:10px 15px;background:#146a56;color:#fff;border:0;border-radius:6px}@media(max-width:600px){.details{grid-template-columns:1fr}body{overflow-x:auto}table{min-width:650px}}@media print{button{display:none}body{padding:0}}</style></head><body><header><h1>${esc(state.settings.name)}</h1><div>Student fee statement · ${esc(state.settings.academicYear)} · ${esc(state.settings.term)}</div></header><div class="details"><div><strong>Student:</strong> ${esc(student.name)}</div><div><strong>Student number:</strong> ${esc(student.admission)}</div><div><strong>Class:</strong> ${esc(student.class)}</div><div><strong>Status:</strong> ${esc(student.status || "active")}</div><div><strong>Guardian:</strong> ${esc(student.guardianName || "—")}</div><div><strong>Guardian phone:</strong> ${esc(student.guardianPhone || "—")}</div></div><div class="summary"><span>Total adjusted charges: ${money(totalCharges)}</span><span>Effective payments: ${money(totalPayments)}</span><span class="balance">${currentBalance > 0 ? "Outstanding" : currentBalance < 0 ? "Credit" : "Balance"}: ${money(Math.abs(currentBalance))}</span></div><table><thead><tr><th>Date</th><th>Type</th><th>Description or receipt</th><th>Charge</th><th>Payment</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${esc(row.date)}</td><td>${esc(row.type)}</td><td>${esc(row.reference)}</td><td>${row.charge ? money(row.charge) : "—"}</td><td>${row.payment ? money(row.payment) : "—"}</td></tr>`).join("") || '<tr><td colspan="5">No financial transactions recorded.</td></tr>'}</tbody><tfoot><tr><th colspan="3">Totals after adjustments</th><th>${money(totalCharges)}</th><th>${money(totalPayments)}</th></tr></tfoot></table><button onclick="window.print()">Print or save as PDF</button></body></html>`,
   );
   popup.document.close();
 }
@@ -1588,7 +1617,11 @@ function activityDescription(item) {
       "timetable.created": `Scheduled ${details.subjectName || "a lesson"} for ${details.className || "a class"}`,
       "timetable.removed": `Removed a lesson from the timetable`,
       "payment.recorded": `Recorded payment ${details.receiptNumber || ""} for ${money(Number(details.amountBututs || 0))}`,
+      "payment.refunded": `Recorded a refund of ${money(Number(details.amountBututs || 0))} for receipt ${details.receiptNumber || ""}`,
+      "payment.voided": `Voided the remaining payment on receipt ${details.receiptNumber || ""}`,
       "charge.created": `Added ${details.description || "fee"} charge of ${money(Number(details.amountBututs || 0))}`,
+      "charge.waiver": `Applied a waiver of ${money(Number(details.amountBututs || 0))} to ${details.description || "a fee"}`,
+      "charge.discount": `Applied a discount of ${money(Number(details.amountBututs || 0))} to ${details.description || "a fee"}`,
       "class_charge.created": `Charged ${details.students || 0} students in ${details.className || "a class"}`,
       "attendance.saved": `Saved attendance for ${details.className || "a class"} on ${details.date || ""}`,
       "results.published": `Published ${details.className || "class"} results, version ${details.version || ""}`,
@@ -2406,6 +2439,7 @@ function wire() {
               studentId: f.get("student"),
               description: label,
               amountBututs: amount,
+              dueDate: f.get("dueDate"),
             }),
           });
           await loadSchoolFinance();
@@ -2418,6 +2452,7 @@ function wire() {
           studentId: f.get("student"),
           label,
           amount,
+          dueDate: f.get("dueDate"),
         });
         const persisted = save();
         render();
@@ -2454,6 +2489,7 @@ function wire() {
               className,
               description: label,
               amountBututs: amount,
+              dueDate: form.get("dueDate"),
             }),
           });
           await loadSchoolFinance();
@@ -2467,6 +2503,7 @@ function wire() {
             studentId: student.id,
             label,
             amount,
+            dueDate: form.get("dueDate"),
           });
         save();
         render();
@@ -2476,6 +2513,67 @@ function wire() {
         e.target.querySelector(".button").disabled = false;
       }
     };
+    if ($("#payment-adjustment-form")) {
+      $("#payment-adjustment-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const form = new FormData(e.target),
+          adjustmentType = form.get("adjustmentType"),
+          reason = String(form.get("reason") || "").trim(),
+          paymentId = form.get("paymentId"),
+          button = e.target.querySelector("button");
+        try {
+          const amountBututs =
+            adjustmentType === "refund" ? cents(form.get("amount")) : null;
+          if (reason.length < 3) throw Error("Enter a clear correction reason.");
+          const payment = state.payments.find((item) => item.id === paymentId);
+          if (
+            !confirm(
+              adjustmentType === "void"
+                ? `Void the remaining ${money(payment?.amount || 0)} on receipt ${payment?.reference || ""}?`
+                : `Record a ${money(amountBututs)} refund against receipt ${payment?.reference || ""}?`,
+            )
+          )
+            return;
+          button.disabled = true;
+          await schoolApi(`/api/school/payments/${paymentId}/adjustments`, {
+            method: "POST",
+            body: JSON.stringify({ adjustmentType, amountBututs, reason }),
+          });
+          await loadSchoolFinance();
+          render();
+          toast(adjustmentType === "void" ? "Payment voided with an audit record." : "Refund recorded with an audit record.");
+        } catch (err) {
+          $("#payment-adjustment-error").textContent = err.message;
+          button.disabled = false;
+        }
+      };
+    }
+    if ($("#fee-adjustment-form")) {
+      $("#fee-adjustment-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const form = new FormData(e.target),
+          adjustmentType = form.get("adjustmentType"),
+          reason = String(form.get("reason") || "").trim(),
+          chargeId = form.get("chargeId"),
+          button = e.target.querySelector("button");
+        try {
+          const amountBututs = cents(form.get("amount"));
+          if (reason.length < 3) throw Error("Enter a clear adjustment reason.");
+          if (!confirm(`Apply this ${adjustmentType} of ${money(amountBututs)}?`)) return;
+          button.disabled = true;
+          await schoolApi(`/api/school/charges/${chargeId}/adjustments`, {
+            method: "POST",
+            body: JSON.stringify({ adjustmentType, amountBututs, reason }),
+          });
+          await loadSchoolFinance();
+          render();
+          toast(`${adjustmentType === "waiver" ? "Waiver" : "Discount"} recorded with an audit entry.`);
+        } catch (err) {
+          $("#fee-adjustment-error").textContent = err.message;
+          button.disabled = false;
+        }
+      };
+    }
   }
   if (view === "results") {
     $("#print-report-cards").onclick = printClassReportCards;

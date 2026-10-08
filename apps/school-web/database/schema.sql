@@ -296,6 +296,32 @@ ALTER TABLE payments ADD COLUMN IF NOT EXISTS term text;
 UPDATE payments p SET academic_year=s.current_academic_year,term=s.current_term
 FROM schools s WHERE p.school_id=s.id AND (p.academic_year IS NULL OR p.term IS NULL);
 
+CREATE TABLE IF NOT EXISTS payment_adjustments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  payment_id uuid NOT NULL REFERENCES payments(id) ON DELETE RESTRICT,
+  adjustment_type text NOT NULL CHECK (adjustment_type IN ('refund','void')),
+  amount_bututs bigint NOT NULL CHECK (amount_bututs > 0),
+  reason text NOT NULL,
+  recorded_by text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS payment_adjustments_payment_idx
+  ON payment_adjustments(school_id,payment_id,created_at);
+
+CREATE TABLE IF NOT EXISTS fee_adjustments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  charge_id uuid NOT NULL REFERENCES fee_charges(id) ON DELETE RESTRICT,
+  adjustment_type text NOT NULL CHECK (adjustment_type IN ('waiver','discount')),
+  amount_bututs bigint NOT NULL CHECK (amount_bututs > 0),
+  reason text NOT NULL,
+  recorded_by text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS fee_adjustments_charge_idx
+  ON fee_adjustments(school_id,charge_id,created_at);
+
 CREATE TABLE IF NOT EXISTS assessments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
