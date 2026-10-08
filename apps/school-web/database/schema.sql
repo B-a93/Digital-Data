@@ -241,6 +241,24 @@ CREATE TABLE IF NOT EXISTS student_lifecycle_events (
 CREATE INDEX IF NOT EXISTS student_lifecycle_events_student_idx
   ON student_lifecycle_events(school_id,student_id,event_date DESC,created_at DESC);
 
+CREATE TABLE IF NOT EXISTS guardian_follow_ups (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  student_id uuid NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  contact_method text NOT NULL CHECK (contact_method IN ('phone','whatsapp','meeting','email','other')),
+  category text NOT NULL CHECK (category IN ('attendance','fees','academic','behaviour','welfare','general')),
+  contacted_on date NOT NULL DEFAULT CURRENT_DATE,
+  outcome text NOT NULL,
+  follow_up_on date,
+  status text NOT NULL DEFAULT 'open' CHECK (status IN ('open','completed')),
+  recorded_by text NOT NULL,
+  completed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS guardian_follow_ups_school_due_idx
+  ON guardian_follow_ups(school_id,status,follow_up_on,created_at DESC);
+
 INSERT INTO student_lifecycle_events(
   school_id,student_id,event_type,new_status,new_class_id,event_date,reason
 )
