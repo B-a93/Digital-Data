@@ -28,6 +28,25 @@ test('cancellation lifecycle requires confirmation and records retention dates',
  assert.match(app,/Request immediate permanent deletion/);
  assert.match(app,/Permanently delete/);
 });
+test('academic periods close safely and preserve historical school records',async()=>{
+ const [server,schema,app]=await Promise.all([
+  readFile('apps/school-web/server.mjs','utf8'),
+  readFile('apps/school-web/database/schema.sql','utf8'),
+  readFile('apps/school-web/public/app.js','utf8'),
+ ]);
+ assert.match(schema,/CREATE TABLE IF NOT EXISTS academic_periods/);
+ assert.match(schema,/academic_periods_one_active_idx/);
+ assert.match(schema,/ALTER TABLE attendance ADD COLUMN IF NOT EXISTS academic_year/);
+ assert.match(schema,/ALTER TABLE fee_charges ADD COLUMN IF NOT EXISTS academic_year/);
+ assert.match(schema,/ALTER TABLE payments ADD COLUMN IF NOT EXISTS academic_year/);
+ assert.match(schema,/ALTER TABLE assessments ADD COLUMN IF NOT EXISTS academic_year/);
+ assert.match(server,/pathname === "\/api\/school\/academic-periods"/);
+ assert.match(server,/confirmation !== context\.name/);
+ assert.match(server,/academic_period\.closed/);
+ assert.match(server,/current_academic_year=\$2,current_term=\$3/);
+ assert.match(app,/Close current period and start next/);
+ assert.match(app,/Previous records were preserved/);
+});
 test('self-onboarding creates an invited workspace and starts trials only after activation',async()=>{
  const [server,schema,onboarding]=await Promise.all([
   readFile('apps/school-web/server.mjs','utf8'),

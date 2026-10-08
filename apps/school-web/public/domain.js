@@ -23,7 +23,8 @@ export function seed() {
     version: 1,
     settings: {
       name: "Example Academy",
-      term: "Term 1 · 2026/27",
+      academicYear: "2026/27",
+      term: "Term 1",
       pass: 50,
       classes: [...classes],
       feeTypes: ["Term tuition"],
