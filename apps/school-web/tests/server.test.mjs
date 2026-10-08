@@ -47,6 +47,26 @@ test('academic periods close safely and preserve historical school records',asyn
  assert.match(app,/Close current period and start next/);
  assert.match(app,/Previous records were preserved/);
 });
+test('finance corrections preserve original transactions and support fee due dates',async()=>{
+ const [server,schema,app]=await Promise.all([
+  readFile('apps/school-web/server.mjs','utf8'),
+  readFile('apps/school-web/database/schema.sql','utf8'),
+  readFile('apps/school-web/public/app.js','utf8'),
+ ]);
+ assert.match(schema,/CREATE TABLE IF NOT EXISTS payment_adjustments/);
+ assert.match(schema,/adjustment_type IN \('refund','void'\)/);
+ assert.match(schema,/CREATE TABLE IF NOT EXISTS fee_adjustments/);
+ assert.match(schema,/adjustment_type IN \('waiver','discount'\)/);
+ assert.match(schema,/fee_charges ADD COLUMN IF NOT EXISTS due_date date/);
+ assert.match(server,/const paymentAdjustmentRoute/);
+ assert.match(server,/const feeAdjustmentRoute/);
+ assert.match(server,/cannot exceed the unadjusted payment amount/);
+ assert.match(server,/cannot exceed the remaining charge/);
+ assert.match(app,/Payment corrections and refunds/);
+ assert.match(app,/Fee waivers and discounts/);
+ assert.match(app,/Due date \(optional\)/);
+ assert.match(app,/Original receipts remain in the audit trail/);
+});
 test('self-onboarding creates an invited workspace and starts trials only after activation',async()=>{
  const [server,schema,onboarding]=await Promise.all([
   readFile('apps/school-web/server.mjs','utf8'),
