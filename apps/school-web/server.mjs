@@ -528,6 +528,7 @@ const server = http.createServer(async (req, res) => {
         academicPeriods,
         paymentAdjustments,
         feeAdjustments,
+        studentLifecycle,
       ] = await Promise.all([
         query(
           `SELECT id,name,slug,current_academic_year,current_term,pass_mark,grade_scale,school_type,region,district,
@@ -612,6 +613,12 @@ const server = http.createServer(async (req, res) => {
            FROM fee_adjustments WHERE school_id=$1 ORDER BY created_at`,
           [context.school_id],
         ),
+        query(
+          `SELECT id,student_id,event_type,previous_status,new_status,previous_class_id,new_class_id,
+                  event_date,reason,related_school,notes,recorded_by,created_at
+           FROM student_lifecycle_events WHERE school_id=$1 ORDER BY event_date,created_at`,
+          [context.school_id],
+        ),
       ]);
       const backup = {
         format: "digital-data-school-backup",
@@ -634,6 +641,7 @@ const server = http.createServer(async (req, res) => {
         academicPeriods: academicPeriods.rows,
         paymentAdjustments: paymentAdjustments.rows,
         feeAdjustments: feeAdjustments.rows,
+        studentLifecycle: studentLifecycle.rows,
       };
       await recordAudit(
         context,
@@ -712,7 +720,7 @@ const server = http.createServer(async (req, res) => {
               [context.school_id, className],
             )
           ).rows[0];
-          return (
+          const created = (
             await client.query(
               `INSERT INTO students(school_id,class_id,student_number,full_name,guardian_name,guardian_phone,
                                     date_of_birth,gender,address,previous_school,admission_date)
@@ -734,6 +742,12 @@ const server = http.createServer(async (req, res) => {
               ],
             )
           ).rows[0];
+          await client.query(
+            `INSERT INTO student_lifecycle_events(school_id,student_id,event_type,new_status,new_class_id,event_date,reason,recorded_by)
+             VALUES($1,$2,'admitted','active',$3,COALESCE($4::date,CURRENT_DATE),'Student registered',$5)`,
+            [context.school_id,created.id,schoolClass.id,admissionDate || null,context.auth_user_id],
+          );
+          return created;
         });
         await recordAudit(context, "student.created", "student", student.id, {
           studentNumber,
@@ -818,6 +832,11 @@ const server = http.createServer(async (req, res) => {
                application.previous_school],
             )
           ).rows[0];
+          await client.query(
+            `INSERT INTO student_lifecycle_events(school_id,student_id,event_type,new_status,new_class_id,event_date,reason,recorded_by)
+             VALUES($1,$2,'admitted','active',$3,CURRENT_DATE,'Admission application approved',$4)`,
+            [context.school_id,student.id,schoolClass.id,context.auth_user_id],
+          );
         }
         await client.query(
           `UPDATE student_admission_applications
@@ -876,14 +895,27 @@ const server = http.createServer(async (req, res) => {
           throw Object.assign(new Error("One of the classes was not found."), {
             status: 404,
           });
-        return (
+        const eligible = (
           await client.query(
+            `SELECT id,class_id,status FROM students
+             WHERE school_id=$1 AND class_id=$2 AND status='active' AND id=ANY($3::uuid[]) FOR UPDATE`,
+            [context.school_id, source.id, studentIds],
+          )
+        ).rows;
+        if (!eligible.length) return 0;
+        await client.query(
             `UPDATE students SET class_id=$4,updated_at=now()
              WHERE school_id=$1 AND class_id=$2 AND status='active' AND id=ANY($3::uuid[])
              RETURNING id`,
             [context.school_id, source.id, studentIds, destination.id],
-          )
-        ).rowCount;
+        );
+        for (const student of eligible)
+          await client.query(
+            `INSERT INTO student_lifecycle_events(school_id,student_id,event_type,previous_status,new_status,previous_class_id,new_class_id,event_date,reason,recorded_by)
+             VALUES($1,$2,'promoted','active','active',$3,$4,CURRENT_DATE,'Class promotion',$5)`,
+            [context.school_id,student.id,source.id,destination.id,context.auth_user_id],
+          );
+        return eligible.length;
       });
       if (!promoted) {
         json(res, 409, {
@@ -1156,9 +1188,9 @@ const server = http.createServer(async (req, res) => {
             ).rows[0];
             classIds.set(row.className, schoolClass.id);
           }
-          await client.query(
+          const created = (await client.query(
             `INSERT INTO students(school_id,class_id,student_number,full_name,guardian_name,guardian_phone)
-             VALUES($1,$2,$3,$4,$5,$6)`,
+             VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,
             [
               context.school_id,
               classIds.get(row.className),
@@ -1167,6 +1199,11 @@ const server = http.createServer(async (req, res) => {
               row.guardianName || null,
               row.guardianPhone || null,
             ],
+          )).rows[0];
+          await client.query(
+            `INSERT INTO student_lifecycle_events(school_id,student_id,event_type,new_status,new_class_id,event_date,reason,recorded_by)
+             VALUES($1,$2,'admitted','active',$3,CURRENT_DATE,'Student imported',$4)`,
+            [context.school_id,created.id,classIds.get(row.className),context.auth_user_id],
           );
         }
       });
@@ -1685,6 +1722,99 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
+    const lifecycleRoute = pathname.match(
+      /^\/api\/school\/students\/([0-9a-f-]{36})\/lifecycle$/,
+    );
+    if (lifecycleRoute) {
+      const context = await requireSchoolContext(req);
+      const studentId = lifecycleRoute[1];
+      if (req.method === "GET") {
+        const student = (await query(
+          `SELECT id FROM students WHERE id=$1 AND school_id=$2`,
+          [studentId,context.school_id],
+        )).rows[0];
+        if (!student) {
+          json(res,404,{ error: "Student not found." });
+          return;
+        }
+        const events = await query(
+          `SELECT e.id,e.event_type,e.previous_status,e.new_status,e.event_date,e.reason,
+                  e.related_school,e.notes,e.created_at,pc.name AS previous_class,nc.name AS new_class
+           FROM student_lifecycle_events e
+           LEFT JOIN classes pc ON pc.id=e.previous_class_id
+           LEFT JOIN classes nc ON nc.id=e.new_class_id
+           WHERE e.school_id=$1 AND e.student_id=$2
+           ORDER BY e.event_date DESC,e.created_at DESC`,
+          [context.school_id,studentId],
+        );
+        json(res,200,{ events: events.rows });
+        return;
+      }
+      requireRole(context,"administrator");
+      if (req.method !== "POST") {
+        json(res,405,{ error: "Method not allowed" });
+        return;
+      }
+      const data = await readJsonBody(req),
+        action = String(data.action || "").trim(),
+        eventDate = String(data.eventDate || "").trim(),
+        reason = String(data.reason || "").trim(),
+        relatedSchool = String(data.relatedSchool || "").trim(),
+        className = String(data.className || "").trim();
+      const actions = {
+        transfer: ["transferred_out","transferred"],
+        withdraw: ["withdrawn","withdrawn"],
+        graduate: ["graduated","graduated"],
+        deactivate: ["deactivated","inactive"],
+        re_enrol: ["re_enrolled","active"],
+        reactivate: ["reactivated","active"],
+      };
+      if (!actions[action] || !/^\d{4}-\d{2}-\d{2}$/.test(eventDate) || reason.length < 3 || reason.length > 300 || relatedSchool.length > 160) {
+        json(res,400,{ error: "Choose an action and date, then enter a reason (3–300 characters)." });
+        return;
+      }
+      if (action === "transfer" && !relatedSchool) {
+        json(res,400,{ error: "Enter the receiving school for a transfer." });
+        return;
+      }
+      const result = await transaction(async (client) => {
+        const student = (await client.query(
+          `SELECT id,status,class_id FROM students WHERE id=$1 AND school_id=$2 FOR UPDATE`,
+          [studentId,context.school_id],
+        )).rows[0];
+        if (!student) return null;
+        const [eventType,newStatus] = actions[action];
+        if (newStatus !== "active" && student.status !== "active")
+          throw Object.assign(Error("Only active students can be transferred, withdrawn, graduated or deactivated."),{ status: 409 });
+        if (newStatus === "active" && student.status === "active")
+          throw Object.assign(Error("This student is already active."),{ status: 409 });
+        let newClassId = student.class_id;
+        if (newStatus === "active" && className)
+          newClassId = (await client.query(
+            `INSERT INTO classes(school_id,name) VALUES($1,$2)
+             ON CONFLICT(school_id,name) DO UPDATE SET name=EXCLUDED.name RETURNING id`,
+            [context.school_id,className],
+          )).rows[0].id;
+        await client.query(
+          `UPDATE students SET status=$3,class_id=$4,updated_at=now() WHERE id=$1 AND school_id=$2`,
+          [studentId,context.school_id,newStatus,newClassId],
+        );
+        const event = (await client.query(
+          `INSERT INTO student_lifecycle_events(school_id,student_id,event_type,previous_status,new_status,previous_class_id,new_class_id,event_date,reason,related_school,recorded_by)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+           RETURNING id,event_type,event_date,new_status`,
+          [context.school_id,studentId,eventType,student.status,newStatus,student.class_id,newClassId,eventDate,reason,relatedSchool || null,context.auth_user_id],
+        )).rows[0];
+        return event;
+      });
+      if (!result) {
+        json(res,404,{ error: "Student not found." });
+        return;
+      }
+      await recordAudit(context,"student.lifecycle_changed","student",studentId,{ action,eventDate,reason,relatedSchool: relatedSchool || null });
+      json(res,201,{ event: result });
+      return;
+    }
     const studentRoute = pathname.match(
       /^\/api\/school\/students\/([0-9a-f-]{36})$/,
     );
@@ -1696,35 +1826,6 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const data = await readJsonBody(req);
-      if (data.status !== undefined) {
-        const status = String(data.status).toLowerCase();
-        if (!["active", "inactive", "graduated"].includes(status)) {
-          json(res, 400, { error: "Choose a valid student status." });
-          return;
-        }
-        const student = (
-          await query(
-            `UPDATE students SET status=$3,updated_at=now() WHERE id=$1 AND school_id=$2
-             RETURNING id,student_number,full_name,status`,
-            [studentRoute[1], context.school_id, status],
-          )
-        ).rows[0];
-        if (!student) {
-          json(res, 404, { error: "Student not found." });
-          return;
-        }
-        await recordAudit(
-          context,
-          "student.status_changed",
-          "student",
-          student.id,
-          {
-            status,
-          },
-        );
-        json(res, 200, { student });
-        return;
-      }
       const studentNumber = String(data.studentNumber || "")
           .trim()
           .toUpperCase(),
@@ -1751,6 +1852,11 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const updated = await transaction(async (client) => {
+        const previous = (await client.query(
+          `SELECT class_id,status FROM students WHERE id=$1 AND school_id=$2 FOR UPDATE`,
+          [studentRoute[1],context.school_id],
+        )).rows[0];
+        if (!previous) return null;
         const schoolClass = (
           await client.query(
             `INSERT INTO classes(school_id,name) VALUES($1,$2)
@@ -1758,7 +1864,7 @@ const server = http.createServer(async (req, res) => {
             [context.school_id, className],
           )
         ).rows[0];
-        return (
+        const result = (
           await client.query(
             `UPDATE students SET student_number=$3,full_name=$4,class_id=$5,guardian_name=$6,guardian_phone=$7,
                                  date_of_birth=$8,gender=$9,address=$10,previous_school=$11,admission_date=$12,updated_at=now()
@@ -1781,6 +1887,13 @@ const server = http.createServer(async (req, res) => {
             ],
           )
         ).rows[0];
+        if (previous.class_id !== schoolClass.id)
+          await client.query(
+            `INSERT INTO student_lifecycle_events(school_id,student_id,event_type,previous_status,new_status,previous_class_id,new_class_id,event_date,reason,recorded_by)
+             VALUES($1,$2,'class_changed',$3,$3,$4,$5,CURRENT_DATE,'Student details updated',$6)`,
+            [context.school_id,studentRoute[1],previous.status,previous.class_id,schoolClass.id,context.auth_user_id],
+          );
+        return result;
       });
       if (!updated) {
         json(res, 404, { error: "Student not found." });

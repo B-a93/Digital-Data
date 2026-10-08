@@ -210,6 +210,10 @@ CREATE TABLE IF NOT EXISTS students (
   UNIQUE (school_id, student_number)
 );
 
+ALTER TABLE students DROP CONSTRAINT IF EXISTS students_status_check;
+ALTER TABLE students ADD CONSTRAINT students_status_check
+  CHECK (status IN ('active', 'inactive', 'withdrawn', 'transferred', 'graduated'));
+
 ALTER TABLE students ADD COLUMN IF NOT EXISTS guardian_name text;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS guardian_phone text;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS date_of_birth date;
@@ -217,6 +221,36 @@ ALTER TABLE students ADD COLUMN IF NOT EXISTS gender text;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS address text;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS previous_school text;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS admission_date date;
+
+CREATE TABLE IF NOT EXISTS student_lifecycle_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  student_id uuid NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  event_type text NOT NULL CHECK (event_type IN ('admitted','promoted','class_changed','transferred_out','withdrawn','graduated','re_enrolled','deactivated','reactivated')),
+  previous_status text,
+  new_status text,
+  previous_class_id uuid REFERENCES classes(id) ON DELETE SET NULL,
+  new_class_id uuid REFERENCES classes(id) ON DELETE SET NULL,
+  event_date date NOT NULL DEFAULT CURRENT_DATE,
+  reason text NOT NULL,
+  related_school text,
+  notes text,
+  recorded_by text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS student_lifecycle_events_student_idx
+  ON student_lifecycle_events(school_id,student_id,event_date DESC,created_at DESC);
+
+INSERT INTO student_lifecycle_events(
+  school_id,student_id,event_type,new_status,new_class_id,event_date,reason
+)
+SELECT s.school_id,s.id,'admitted',s.status,s.class_id,
+       COALESCE(s.admission_date,s.created_at::date),'Initial student record'
+FROM students s
+WHERE NOT EXISTS (
+  SELECT 1 FROM student_lifecycle_events e
+  WHERE e.student_id=s.id AND e.event_type='admitted'
+);
 
 CREATE TABLE IF NOT EXISTS student_admission_applications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

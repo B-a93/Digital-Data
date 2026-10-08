@@ -119,6 +119,7 @@ let view = "dashboard",
   schoolActivity = [],
   schoolProgrammes = [],
   admissionApplications = [],
+  studentLifecycle = [],
   academicPeriods = [],
   platformBilling = { schools: [], payments: [] },
   billingFilter = "all";
@@ -571,6 +572,14 @@ async function loadSchoolStudents() {
     timetableClass = schoolClasses()[0];
   schoolDataLive = true;
 }
+async function loadStudentLifecycle(studentId) {
+  if (!schoolDataLive || !studentId) {
+    studentLifecycle = [];
+    return;
+  }
+  const data = await schoolApi(`/api/school/students/${studentId}/lifecycle`);
+  studentLifecycle = data.events || [];
+}
 async function loadAdmissions() {
   const data = await schoolApi("/api/school/admissions");
   admissionApplications = data.applications || [];
@@ -1001,6 +1010,15 @@ function promotionPanel() {
   );
   return `<section class="panel" id="promotion-panel"><div class="panel-heading"><div><h2>Promote students</h2><p>Move selected active students to their next class without losing their records.</p></div><span class="badge gray">Administrator only</span></div><form id="promotion-form"><div class="toolbar"><label for="promotion-from">Current class</label><select id="promotion-from">${options(schoolClasses(), promotionFrom)}</select><label for="promotion-to">Next class</label><select id="promotion-to">${options(schoolClasses(), promotionTo)}</select><button type="button" class="text-button" id="promotion-select-all">Select all</button></div>${table(["Select", "Student", "Current class"], promotionStudents.map((student) => `<tr><td><input type="checkbox" class="promotion-student" value="${esc(student.id)}" aria-label="Select ${esc(student.name)}"></td><td>${studentCell(student)}</td><td>${esc(student.class)}</td></tr>`).join(""))}<div class="form-actions"><button type="submit" class="button" ${schoolClasses().length < 2 || !promotionStudents.length ? "disabled" : ""}>Promote selected students</button><span class="status-text">Only active students in the current class can be promoted.</span></div><div id="promotion-error" class="error" role="alert"></div></form></section>`;
 }
+const lifecycleLabel = (type) => ({
+  admitted: "Admitted", promoted: "Promoted", class_changed: "Class changed",
+  transferred_out: "Transferred out", withdrawn: "Withdrawn", graduated: "Graduated",
+  re_enrolled: "Re-enrolled", deactivated: "Deactivated", reactivated: "Reactivated",
+})[type] || String(type || "").replaceAll("_", " ");
+function lifecyclePanel(student) {
+  const active = (student.status || "active") === "active";
+  return `<section class="panel" id="student-lifecycle-panel"><div class="panel-heading"><div><h2>Student lifecycle history</h2><p>Record official enrolment changes without deleting previous records.</p></div><span class="badge gray">${studentLifecycle.length} events</span></div><form id="student-lifecycle-form"><div class="form-grid"><div class="field"><label for="lifecycle-action">Action</label><select id="lifecycle-action" name="action">${active ? '<option value="transfer">Transfer to another school</option><option value="withdraw">Withdraw</option><option value="graduate">Graduate</option><option value="deactivate">Deactivate</option>' : '<option value="re_enrol">Re-enrol</option><option value="reactivate">Reactivate</option>'}</select></div><div class="field"><label for="lifecycle-date">Effective date</label><input id="lifecycle-date" name="eventDate" type="date" value="${localDate()}" required></div><div class="field"><label for="lifecycle-class">Class after re-enrolment</label><select id="lifecycle-class" name="className"><option value="">Keep current class</option>${options(schoolClasses(), "")}</select></div><div class="field"><label for="related-school">Receiving school (for transfer)</label><input id="related-school" name="relatedSchool" maxlength="160" placeholder="School name"></div><div class="field"><label for="lifecycle-reason">Reason</label><textarea id="lifecycle-reason" name="reason" maxlength="300" required placeholder="Why is this change being recorded?"></textarea></div></div><div class="form-actions"><button class="button">Save lifecycle event</button><span class="status-text">History entries cannot overwrite earlier events.</span></div><div id="lifecycle-error" class="error" role="alert"></div></form>${table(["Date","Event","Status / class","Reason"],studentLifecycle.map((event) => `<tr><td>${esc(String(event.event_date).slice(0,10))}</td><td>${esc(lifecycleLabel(event.event_type))}</td><td>${esc(event.previous_status || "—")} → ${esc(event.new_status || "—")}<span class="sub">${esc(event.previous_class || "—")} → ${esc(event.new_class || "—")}</span></td><td>${esc(event.reason)}${event.related_school ? `<span class="sub">School: ${esc(event.related_school)}</span>` : ""}</td></tr>`).join(""))}</section>`;
+}
 function students() {
   const list = state.students.filter(
       (s) =>
@@ -1015,7 +1033,7 @@ function students() {
       "Keep a clear register of enrolment and class assignments.",
       '<button class="button secondary" id="print-id-cards">Print student ID cards</button>',
     ) +
-    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>${editing ? "Edit student" : schoolDataLive ? "Register a student" : "Register a fictional student"}</h2><span class="badge gray">${schoolDataLive ? "Neon record" : "Demo record"}</span></div><form id="student-form"><div class="form-grid"><div class="field"><label for="student-number">Student number</label><input id="student-number" name="studentNumber" maxlength="30" required autocomplete="off" placeholder="e.g. STU-2026-001" value="${esc(editing?.admission || "")}"></div><div class="field"><label for="name">Student full name</label><input id="name" name="name" maxlength="80" required placeholder="e.g. Awa Example" value="${esc(editing?.name || "")}"></div><div class="field"><label for="new-class">Class</label><select id="new-class" name="class">${options(schoolClasses(), editing?.class || schoolClasses()[0])}</select></div></div><div class="form-actions"><button class="button">${editing ? "Save changes" : "Add student"}</button>${editing ? '<button type="button" class="button secondary" id="cancel-edit">Cancel</button>' : ""}<span class="status-text">Each student number must be unique within this school.</span></div><div class="error" id="form-error" role="alert"></div></form></section><section class="panel" id="student-import-panel"><div class="panel-heading"><div><h2>Import students from Excel</h2><p>Download the CSV template, complete it in Excel, then upload the saved CSV file.</p></div></div><form id="student-import-form"><div class="form-grid"><div class="field"><label for="student-import-file">Completed CSV file</label><input id="student-import-file" name="file" type="file" accept=".csv,text/csv" required></div></div><div class="form-actions"><button type="button" class="button secondary" id="student-template">Download template</button><button class="button">Import students</button><span class="status-text">Maximum 1,000 students per file.</span></div><div id="student-import-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Student register</h2><small>${list.length} students</small></div><div class="toolbar"><input id="search" type="search" aria-label="Search students" value="${esc(search)}" placeholder="Search name or student number"><select id="student-class" aria-label="Filter students by class"><option value="">All classes</option>${options(schoolClasses(), studentClass)}</select><select id="student-status" aria-label="Filter students by status"><option value="">All statuses</option>${options(["active", "inactive", "graduated"], studentStatus)}</select></div>${table(["Student", "Class", "Status", "Balance", "Action"], list.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td><span class="badge ${(s.status || "active") === "active" ? "" : "gray"}">${esc(s.status || "active")}</span></td><td>${money(balance(state, s.id))}</td><td><button class="text-button edit-student" data-id="${s.id}">Edit</button> · <button class="text-button student-status-action" data-id="${s.id}" data-status="${(s.status || "active") === "active" ? "inactive" : "active"}">${(s.status || "active") === "active" ? "Deactivate" : "Reactivate"}</button>${(s.status || "active") === "active" ? ` · <button class="text-button student-status-action" data-id="${s.id}" data-status="graduated">Graduate</button>` : ""}</td></tr>`).join(""))}</section></div>`
+    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>${editing ? "Edit student" : schoolDataLive ? "Register a student" : "Register a fictional student"}</h2><span class="badge gray">${schoolDataLive ? "Neon record" : "Demo record"}</span></div><form id="student-form"><div class="form-grid"><div class="field"><label for="student-number">Student number</label><input id="student-number" name="studentNumber" maxlength="30" required autocomplete="off" placeholder="e.g. STU-2026-001" value="${esc(editing?.admission || "")}"></div><div class="field"><label for="name">Student full name</label><input id="name" name="name" maxlength="80" required placeholder="e.g. Awa Example" value="${esc(editing?.name || "")}"></div><div class="field"><label for="new-class">Class</label><select id="new-class" name="class">${options(schoolClasses(), editing?.class || schoolClasses()[0])}</select></div></div><div class="form-actions"><button class="button">${editing ? "Save changes" : "Add student"}</button>${editing ? '<button type="button" class="button secondary" id="cancel-edit">Cancel</button>' : ""}<span class="status-text">Each student number must be unique within this school.</span></div><div class="error" id="form-error" role="alert"></div></form></section>${editing && schoolDataLive ? lifecyclePanel(editing) : ""}<section class="panel" id="student-import-panel"><div class="panel-heading"><div><h2>Import students from Excel</h2><p>Download the CSV template, complete it in Excel, then upload the saved CSV file.</p></div></div><form id="student-import-form"><div class="form-grid"><div class="field"><label for="student-import-file">Completed CSV file</label><input id="student-import-file" name="file" type="file" accept=".csv,text/csv" required></div></div><div class="form-actions"><button type="button" class="button secondary" id="student-template">Download template</button><button class="button">Import students</button><span class="status-text">Maximum 1,000 students per file.</span></div><div id="student-import-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Student register</h2><small>${list.length} students</small></div><div class="toolbar"><input id="search" type="search" aria-label="Search students" value="${esc(search)}" placeholder="Search name or student number"><select id="student-class" aria-label="Filter students by class"><option value="">All classes</option>${options(schoolClasses(), studentClass)}</select><select id="student-status" aria-label="Filter students by status"><option value="">All statuses</option>${options(["active", "inactive", "withdrawn", "transferred", "graduated"], studentStatus)}</select></div>${table(["Student", "Class", "Status", "Balance", "Action"], list.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td><span class="badge ${(s.status || "active") === "active" ? "" : "gray"}">${esc(s.status || "active")}</span></td><td>${money(balance(state, s.id))}</td><td><button class="text-button edit-student" data-id="${s.id}">${schoolDataLive ? "Edit / lifecycle" : "Edit"}</button>${schoolDataLive ? "" : ` · <button class="text-button student-status-action" data-id="${s.id}" data-status="${(s.status || "active") === "active" ? "inactive" : "active"}">${(s.status || "active") === "active" ? "Deactivate" : "Reactivate"}</button>`}</td></tr>`).join(""))}</section></div>`
   );
 }
 function admissions() {
@@ -2162,15 +2180,60 @@ function wire() {
     };
     document.querySelectorAll(".edit-student").forEach(
       (button) =>
-        (button.onclick = () => {
+        (button.onclick = async () => {
           editingStudentId = button.dataset.id;
+          try {
+            await loadStudentLifecycle(editingStudentId);
+          } catch (err) {
+            toast(err.message);
+          }
           render();
           $("#student-number").focus();
         }),
     );
+    if ($("#student-lifecycle-form"))
+      $("#student-lifecycle-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const form = new FormData(e.target),
+          action = form.get("action"),
+          relatedSchool = form.get("relatedSchool").trim(),
+          reason = form.get("reason").trim(),
+          error = $("#lifecycle-error"),
+          button = e.target.querySelector("button[type=submit]");
+        if (action === "transfer" && !relatedSchool) {
+          error.textContent = "Enter the receiving school for this transfer.";
+          return;
+        }
+        if (reason.length < 3) {
+          error.textContent = "Enter a clear reason for this change.";
+          return;
+        }
+        if (!confirm("Save this official student lifecycle event?")) return;
+        button.disabled = true;
+        try {
+          await schoolApi(`/api/school/students/${editingStudentId}/lifecycle`, {
+            method: "POST",
+            body: JSON.stringify({
+              action,
+              eventDate: form.get("eventDate"),
+              className: form.get("className"),
+              relatedSchool,
+              reason,
+            }),
+          });
+          await loadSchoolStudents();
+          await loadStudentLifecycle(editingStudentId);
+          render();
+          toast("Student lifecycle event recorded.");
+        } catch (err) {
+          error.textContent = err.message;
+          button.disabled = false;
+        }
+      };
     if ($("#cancel-edit"))
       $("#cancel-edit").onclick = () => {
         editingStudentId = null;
+        studentLifecycle = [];
         render();
       };
     $("#search").oninput = (e) => {
