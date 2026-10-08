@@ -67,6 +67,26 @@ test('finance corrections preserve original transactions and support fee due dat
  assert.match(app,/Due date \(optional\)/);
  assert.match(app,/Original receipts remain in the audit trail/);
 });
+test('student lifecycle events preserve transfer, withdrawal and re-enrolment history',async()=>{
+ const [server,schema,app]=await Promise.all([
+  readFile('apps/school-web/server.mjs','utf8'),
+  readFile('apps/school-web/database/schema.sql','utf8'),
+  readFile('apps/school-web/public/app.js','utf8'),
+ ]);
+ assert.match(schema,/CREATE TABLE IF NOT EXISTS student_lifecycle_events/);
+ assert.match(schema,/transferred_out/);
+ assert.match(schema,/re_enrolled/);
+ assert.match(schema,/students_status_check/);
+ assert.match(server,/const lifecycleRoute/);
+ assert.match(server,/student\.lifecycle_changed/);
+ assert.match(server,/Only active students can be transferred/);
+ assert.match(server,/Class promotion/);
+ assert.match(server,/studentLifecycle: studentLifecycle\.rows/);
+ assert.match(app,/Student lifecycle history/);
+ assert.match(app,/Transfer to another school/);
+ assert.match(app,/receiving school/);
+ assert.match(app,/Edit \/ lifecycle/);
+});
 test('self-onboarding creates an invited workspace and starts trials only after activation',async()=>{
  const [server,schema,onboarding]=await Promise.all([
   readFile('apps/school-web/server.mjs','utf8'),
