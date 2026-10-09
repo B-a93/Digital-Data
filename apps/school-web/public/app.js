@@ -1118,7 +1118,7 @@ function students() {
       "Keep a clear register of enrolment and class assignments.",
       '<button class="button secondary" id="print-id-cards">Print student ID cards</button>',
     ) +
-    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>${editing ? "Edit student" : schoolDataLive ? "Register a student" : "Register a fictional student"}</h2><span class="badge gray">${schoolDataLive ? "Neon record" : "Demo record"}</span></div><form id="student-form"><div class="form-grid"><div class="field"><label for="student-number">Student number</label><input id="student-number" name="studentNumber" maxlength="30" required autocomplete="off" placeholder="e.g. STU-2026-001" value="${esc(editing?.admission || "")}"></div><div class="field"><label for="name">Student full name</label><input id="name" name="name" maxlength="80" required placeholder="e.g. Awa Example" value="${esc(editing?.name || "")}"></div><div class="field"><label for="new-class">Class</label><select id="new-class" name="class">${options(schoolClasses(), editing?.class || schoolClasses()[0])}</select></div></div><div class="form-actions"><button class="button">${editing ? "Save changes" : "Add student"}</button>${editing ? '<button type="button" class="button secondary" id="cancel-edit">Cancel</button>' : ""}<span class="status-text">Each student number must be unique within this school.</span></div><div class="error" id="form-error" role="alert"></div></form></section>${editing && schoolDataLive ? lifecyclePanel(editing) : ""}${studentDataQualityPanel()}<section class="panel" id="student-import-panel"><div class="panel-heading"><div><h2>Import students from Excel</h2><p>Download the CSV template, complete it in Excel, then upload the saved CSV file.</p></div></div><form id="student-import-form"><div class="form-grid"><div class="field"><label for="student-import-file">Completed CSV file</label><input id="student-import-file" name="file" type="file" accept=".csv,text/csv" required></div></div><div class="form-actions"><button type="button" class="button secondary" id="student-template">Download template</button><button class="button">Import students</button><span class="status-text">Maximum 1,000 students per file.</span></div><div id="student-import-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Student register</h2><small>${list.length} students</small></div><div class="toolbar"><input id="search" type="search" aria-label="Search students" value="${esc(search)}" placeholder="Search name or student number"><select id="student-class" aria-label="Filter students by class"><option value="">All classes</option>${options(schoolClasses(), studentClass)}</select><select id="student-status" aria-label="Filter students by status"><option value="">All statuses</option>${options(["active", "inactive", "withdrawn", "transferred", "graduated"], studentStatus)}</select></div>${table(["Student", "Class", "Status", "Balance", "Action"], list.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td><span class="badge ${(s.status || "active") === "active" ? "" : "gray"}">${esc(s.status || "active")}</span></td><td>${money(balance(state, s.id))}</td><td><button class="text-button edit-student" data-id="${s.id}">${schoolDataLive ? "Edit / lifecycle" : "Edit"}</button>${schoolDataLive ? "" : ` · <button class="text-button student-status-action" data-id="${s.id}" data-status="${(s.status || "active") === "active" ? "inactive" : "active"}">${(s.status || "active") === "active" ? "Deactivate" : "Reactivate"}</button>`}</td></tr>`).join(""))}</section></div>`
+    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>${editing ? "Edit student" : schoolDataLive ? "Register a student" : "Register a fictional student"}</h2><span class="badge gray">${schoolDataLive ? "School record" : "Demo record"}</span></div><form id="student-form"><div class="form-grid"><div class="field"><label for="student-number">Student number</label><input id="student-number" name="studentNumber" maxlength="30" required autocomplete="off" placeholder="e.g. STU-2026-001" value="${esc(editing?.admission || "")}"></div><div class="field"><label for="name">Student full name</label><input id="name" name="name" maxlength="80" required placeholder="e.g. Awa Example" value="${esc(editing?.name || "")}"></div><div class="field"><label for="new-class">Class</label><select id="new-class" name="class">${options(schoolClasses(), editing?.class || schoolClasses()[0])}</select></div></div><div class="form-actions"><button class="button">${editing ? "Save changes" : "Add student"}</button>${editing ? '<button type="button" class="button secondary" id="cancel-edit">Cancel</button>' : ""}<span class="status-text">Each student number must be unique within this school.</span></div><div class="error" id="form-error" role="alert"></div></form></section>${editing && schoolDataLive ? lifecyclePanel(editing) : ""}${studentDataQualityPanel()}<section class="panel" id="student-import-panel"><div class="panel-heading"><div><h2>Import students from Excel</h2><p>Download the CSV template, complete it in Excel, then upload the saved CSV file.</p></div></div><form id="student-import-form"><div class="form-grid"><div class="field"><label for="student-import-file">Completed CSV file</label><input id="student-import-file" name="file" type="file" accept=".csv,text/csv" required></div></div><div class="form-actions"><button type="button" class="button secondary" id="student-template">Download template</button><button class="button">Import students</button><span class="status-text">Maximum 1,000 students per file.</span></div><div id="student-import-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Student register</h2><small>${list.length} students</small></div><div class="toolbar"><input id="search" type="search" aria-label="Search students" value="${esc(search)}" placeholder="Search name or student number"><select id="student-class" aria-label="Filter students by class"><option value="">All classes</option>${options(schoolClasses(), studentClass)}</select><select id="student-status" aria-label="Filter students by status"><option value="">All statuses</option>${options(["active", "inactive", "withdrawn", "transferred", "graduated"], studentStatus)}</select></div>${table(["Student", "Class", "Status", "Balance", "Action"], list.map((s) => `<tr><td>${studentCell(s)}</td><td>${esc(s.class)}</td><td><span class="badge ${(s.status || "active") === "active" ? "" : "gray"}">${esc(s.status || "active")}</span></td><td>${money(balance(state, s.id))}</td><td><button class="text-button edit-student" data-id="${s.id}">${schoolDataLive ? "Edit / lifecycle" : "Edit"}</button>${schoolDataLive ? "" : ` · <button class="text-button student-status-action" data-id="${s.id}" data-status="${(s.status || "active") === "active" ? "inactive" : "active"}">${(s.status || "active") === "active" ? "Deactivate" : "Reactivate"}</button>`}</td></tr>`).join(""))}</section></div>`
   );
 }
 function admissions() {
@@ -1144,7 +1144,7 @@ function attendance() {
       "Attendance",
       "Record daily attendance. Unmarked is never treated as absent.",
     ) +
-    `<section class="panel"><div class="toolbar"><label for="att-class">Class</label><select id="att-class">${options(schoolClasses(), selectedClass)}</select><label for="att-date">Date</label><input id="att-date" type="date" value="${selectedDate}" required><span class="badge ${count === list.length ? "" : "amber"}">${count}/${list.length} marked</span></div>${table(["Student", "Attendance"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><select class="attendance-select" data-student="${s.id}" aria-label="Attendance for ${esc(s.name)}">${options(["unmarked", "present", "late", "absent", "excused"], marks[s.id] || "unmarked")}</select></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="save-attendance">Save attendance</button><button class="button secondary" id="present-all">Mark class present</button><button class="button secondary" id="print-attendance">Print report</button><button class="button secondary" id="attendance-csv">Download CSV</button><span class="status-text" id="attendance-status">${attendanceDraft ? "Unsaved changes" : record.saved ? `${schoolDataLive ? "Saved to Neon" : "Saved in browser"} · ${count === list.length ? "class complete" : "class incomplete"}` : "Not saved yet"}</span></div><div class="note">Attendance rate = present + late divided by present + late + absent. Excused and unmarked are excluded. Save changes before printing or downloading.</div></section>`
+    `<section class="panel"><div class="toolbar"><label for="att-class">Class</label><select id="att-class">${options(schoolClasses(), selectedClass)}</select><label for="att-date">Date</label><input id="att-date" type="date" value="${selectedDate}" required><span class="badge ${count === list.length ? "" : "amber"}">${count}/${list.length} marked</span></div>${table(["Student", "Attendance"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><select class="attendance-select" data-student="${s.id}" aria-label="Attendance for ${esc(s.name)}">${options(["unmarked", "present", "late", "absent", "excused"], marks[s.id] || "unmarked")}</select></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="save-attendance">Save attendance</button><button class="button secondary" id="present-all">Mark class present</button><button class="button secondary" id="print-attendance">Print report</button><button class="button secondary" id="attendance-csv">Download CSV</button><span class="status-text" id="attendance-status">${attendanceDraft ? "Unsaved changes" : record.saved ? `${schoolDataLive ? "Saved" : "Saved in browser"} · ${count === list.length ? "class complete" : "class incomplete"}` : "Not saved yet"}</span></div><div class="note">Attendance rate = present + late divided by present + late + absent. Excused and unmarked are excluded. Save changes before printing or downloading.</div></section>`
   );
 }
 function attendanceReportData() {
@@ -1457,7 +1457,7 @@ function results() {
         : "Prepare a single demo assessment, then publish a versioned snapshot.",
       '<button class="button secondary" id="print-report-cards">Print class report cards</button>',
     ) +
-    `<section class="panel"><div class="toolbar"><label for="res-term">Term</label><select id="res-term">${options(resultTerms, selectedResultTerm)}</select><label for="res-class">Class</label><select id="res-class">${options(schoolClasses(), selectedClass)}</select><label for="res-subject">Subject</label><select id="res-subject">${options(schoolSubjects(), selectedSubject)}</select><span class="badge ${historical ? "amber" : "gray"}">${historical ? "Historical · read only" : "Current term · /100"}</span><span class="status-text">Pass threshold: ${state.settings.pass}</span></div>${table(["Student", historical ? "Published mark /100" : "Draft mark /100", "Teacher remark"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><input class="money-input mark-input" type="number" min="0" max="100" step="0.01" data-student="${s.id}" aria-label="Mark for ${esc(s.name)}" value="${state.marks[s.id] ?? ""}" ${historical ? "disabled" : ""}></td><td><input class="remark-input" maxlength="160" data-student="${s.id}" aria-label="Remark for ${esc(s.name)}" placeholder="Optional remark" value="${esc(state.remarks[s.id] || "")}" ${historical ? "disabled" : ""}></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="publish" ${historical ? "disabled" : ""}>Approve & publish ${schoolDataLive ? "results" : "demo results"}</button><span class="status-text">${historical ? "Historical results cannot be changed." : schoolDataLive ? "Draft marks are stored securely in Neon." : "Draft marks save on change in this browser."}</span></div><div class="error" id="form-error" role="alert"></div><div class="note">Published results snapshot the school’s grading scale, class, subject and term. Later grading changes cannot alter historical grades.</div></section>${snap ? `<section class="panel"><div class="panel-heading"><div><h2>${esc(snap.subject || "General")} · published version ${snap.version}</h2><small>${esc(snap.term)}</small></div><div class="quick-actions"><button class="button secondary" id="print-results">Print report</button><button class="button secondary" id="results-csv">Download CSV</button></div></div>${table(["Student", "Published score", "Grade", "Outcome", "Remark"], snap.entries.map((e) => { const outcome=resultOutcome(e.score,snap.pass,snap.gradeScale); return `<tr><td>${esc(e.name)}</td><td>${e.score}</td><td>${esc(resultGrade(e.score,snap.pass,snap.gradeScale))}</td><td><span class="badge ${outcome === "Pass" ? "" : "amber"}">${outcome}</span></td><td>${esc(e.remark || "—")}</td></tr>`; }).join(""))}</section>` : ""}`
+    `<section class="panel"><div class="toolbar"><label for="res-term">Term</label><select id="res-term">${options(resultTerms, selectedResultTerm)}</select><label for="res-class">Class</label><select id="res-class">${options(schoolClasses(), selectedClass)}</select><label for="res-subject">Subject</label><select id="res-subject">${options(schoolSubjects(), selectedSubject)}</select><span class="badge ${historical ? "amber" : "gray"}">${historical ? "Historical · read only" : "Current term · /100"}</span><span class="status-text">Pass threshold: ${state.settings.pass}</span></div>${table(["Student", historical ? "Published mark /100" : "Draft mark /100", "Teacher remark"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><input class="money-input mark-input" type="number" min="0" max="100" step="0.01" data-student="${s.id}" aria-label="Mark for ${esc(s.name)}" value="${state.marks[s.id] ?? ""}" ${historical ? "disabled" : ""}></td><td><input class="remark-input" maxlength="160" data-student="${s.id}" aria-label="Remark for ${esc(s.name)}" placeholder="Optional remark" value="${esc(state.remarks[s.id] || "")}" ${historical ? "disabled" : ""}></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="publish" ${historical ? "disabled" : ""}>Approve & publish ${schoolDataLive ? "results" : "demo results"}</button><span class="status-text">${historical ? "Historical results cannot be changed." : schoolDataLive ? "Draft marks are stored securely." : "Draft marks save on change in this browser."}</span></div><div class="error" id="form-error" role="alert"></div><div class="note">Published results snapshot the school’s grading scale, class, subject and term. Later grading changes cannot alter historical grades.</div></section>${snap ? `<section class="panel"><div class="panel-heading"><div><h2>${esc(snap.subject || "General")} · published version ${snap.version}</h2><small>${esc(snap.term)}</small></div><div class="quick-actions"><button class="button secondary" id="print-results">Print report</button><button class="button secondary" id="results-csv">Download CSV</button></div></div>${table(["Student", "Published score", "Grade", "Outcome", "Remark"], snap.entries.map((e) => { const outcome=resultOutcome(e.score,snap.pass,snap.gradeScale); return `<tr><td>${esc(e.name)}</td><td>${e.score}</td><td>${esc(resultGrade(e.score,snap.pass,snap.gradeScale))}</td><td><span class="badge ${outcome === "Pass" ? "" : "amber"}">${outcome}</span></td><td>${esc(e.remark || "—")}</td></tr>`; }).join(""))}</section>` : ""}`
   );
 }
 async function printClassReportCards() {
@@ -1678,7 +1678,7 @@ function reports() {
       )
       .join(
         "",
-      )}<div class="note">${schoolDataLive ? "Exports contain the current school records stored in Neon." : "Exports contain this browser’s fictional demonstration records."}</div></section></div>`
+      )}<div class="note">${schoolDataLive ? "Exports contain the current school records." : "Exports contain this browser’s fictional demonstration records."}</div></section></div>`
   );
 }
 async function downloadSchoolBackup() {
@@ -1833,7 +1833,7 @@ function settings() {
           return `<tr><td>${esc(name)}</td><td>${count}</td><td><button class="text-button remove-fee-type" data-name="${esc(name)}" ${count || state.settings.feeTypes.length === 1 ? "disabled" : ""}>Remove</button></td></tr>`;
         })
         .join(""),
-    )}<div class="note">A fee type cannot be removed after it has been used for a charge.</div></section>${programmesSection}<section class="panel"><div class="panel-heading"><h2>School subjects</h2><small>${state.settings.subjects.length} configured</small></div><form id="subject-form" class="toolbar"><input name="subjectName" maxlength="80" required placeholder="e.g. Mathematics" aria-label="New subject name"><button class="button">Add subject</button></form><div id="subject-error" class="error" role="alert"></div>${table(["Subject", "Action"], state.settings.subjects.map((name) => `<tr><td>${esc(name)}</td><td><button class="text-button remove-subject" data-name="${esc(name)}">Remove</button></td></tr>`).join(""))}<div class="note">Subjects will be used for assessments and student report cards.</div></section><div class="note">Published results retain their original term and threshold. ${schoolDataLive ? "These settings are stored securely in Neon." : "These prototype settings are stored only in this browser."}</div>${cancellationSection}</div>`
+    )}<div class="note">A fee type cannot be removed after it has been used for a charge.</div></section>${programmesSection}<section class="panel"><div class="panel-heading"><h2>School subjects</h2><small>${state.settings.subjects.length} configured</small></div><form id="subject-form" class="toolbar"><input name="subjectName" maxlength="80" required placeholder="e.g. Mathematics" aria-label="New subject name"><button class="button">Add subject</button></form><div id="subject-error" class="error" role="alert"></div>${table(["Subject", "Action"], state.settings.subjects.map((name) => `<tr><td>${esc(name)}</td><td><button class="text-button remove-subject" data-name="${esc(name)}">Remove</button></td></tr>`).join(""))}<div class="note">Subjects will be used for assessments and student report cards.</div></section><div class="note">Published results retain their original term and threshold. ${schoolDataLive ? "These settings are stored securely." : "These prototype settings are stored only in this browser."}</div>${cancellationSection}</div>`
   );
 }
 function wire() {
@@ -2157,7 +2157,7 @@ function wire() {
           await loadSchoolFinance();
           render();
           toast(
-            editing ? "Student details updated." : "Student saved to Neon.",
+            editing ? "Student details updated." : "Student saved.",
           );
         } catch (err) {
           $("#form-error").textContent = err.message;
@@ -2514,7 +2514,7 @@ function wire() {
           attendanceDraft = null;
           await loadSchoolAttendance(selectedDate, selectedClass);
           render();
-          toast("Attendance saved to Neon.");
+          toast("Attendance saved.");
         } catch (err) {
           button.disabled = false;
           toast(err.message);
@@ -2584,7 +2584,7 @@ function wire() {
           await loadSchoolFinance();
           render();
           $("#receipt").innerHTML =
-            `<div class="note">Saved to Neon · Receipt <strong>${esc(result.payment.receipt_number)}</strong><br>${money(Number(result.payment.amount_bututs))} · ${esc(state.students.find((s) => s.id === studentId).name)}<br><button type="button" class="text-button" id="print-new-receipt">Print receipt</button></div>`;
+            `<div class="note">Saved · Receipt <strong>${esc(result.payment.receipt_number)}</strong><br>${money(Number(result.payment.amount_bututs))} · ${esc(state.students.find((s) => s.id === studentId).name)}<br><button type="button" class="text-button" id="print-new-receipt">Print receipt</button></div>`;
           $("#print-new-receipt").onclick = () =>
             printReceipt(result.payment.id);
           return;
@@ -2627,7 +2627,7 @@ function wire() {
           });
           await loadSchoolFinance();
           render();
-          toast("Charge saved to Neon.");
+          toast("Charge saved.");
           return;
         }
         state.charges.push({
@@ -2880,7 +2880,7 @@ function wire() {
           await loadSchoolResults(selectedClass, selectedSubject);
           await loadResultTerms();
           render();
-          toast("Results published to Neon.");
+          toast("Results published.");
           return;
         }
         const snap = publishResults(state, selectedClass, selectedSubject);
@@ -3228,7 +3228,7 @@ function wire() {
           selectedResultTerm = term;
           await loadResultTerms();
           render();
-          toast("School settings saved to Neon.");
+          toast("School settings saved.");
         } catch (err) {
           $("#form-error").textContent = err.message;
           button.disabled = false;
@@ -3267,7 +3267,7 @@ function wire() {
           });
           await loadSchoolStudents();
           render();
-          toast("Class saved to Neon.");
+          toast("Class saved.");
         } catch (err) {
           $("#class-error").textContent = err.message;
           button.disabled = false;
@@ -3336,7 +3336,7 @@ function wire() {
           });
           await loadSchoolFinance();
           render();
-          toast("Fee type saved to Neon.");
+          toast("Fee type saved.");
         } catch (err) {
           $("#fee-type-error").textContent = err.message;
           button.disabled = false;
