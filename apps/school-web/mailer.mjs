@@ -71,7 +71,7 @@ export async function sendOnboardingRequest(request) {
     `Phone / WhatsApp: ${request.phone || "Not provided"}`,
     `Estimated learners: ${request.studentCount || "Not provided"}`,
     `Preferred contact: ${request.preferredContact}`,
-    `Three-month trial: ${request.trialRequested ? "Requested" : "Not requested"}`,
+    `One-month trial: ${request.trialRequested ? "Requested" : "Not requested"}`,
     `Import support: ${request.importHelp}`,
     `Current data format: ${request.dataFormat}`,
     `Academic years to import: ${request.academicYears || "Not provided"}`,
@@ -101,7 +101,7 @@ export async function sendOnboardingRequest(request) {
       ["Estimated learners", request.studentCount || "Not provided"],
       ["Preferred contact", request.preferredContact],
       [
-        "Three-month trial",
+        "One-month trial",
         request.trialRequested ? "Requested" : "Not requested",
       ],
       ["Import support", request.importHelp],

@@ -145,6 +145,24 @@ test('administrator audit centre supports search filters and CSV export',async()
  assert.match(app,/Filtered audit log downloaded/);
  assert.match(app,/Audit records are append-only/);
 });
+test('schools can configure custom grading bands while published results keep their scale',async()=>{
+ const [server,schema,app,domain]=await Promise.all([
+  readFile('apps/school-web/server.mjs','utf8'),
+  readFile('apps/school-web/database/schema.sql','utf8'),
+  readFile('apps/school-web/public/app.js','utf8'),
+  readFile('apps/school-web/public/domain.js','utf8'),
+ ]);
+ assert.match(schema,/assessments ADD COLUMN IF NOT EXISTS grade_scale jsonb/);
+ assert.match(schema,/pass_mark_snapshot/);
+ assert.match(schema,/WHERE NOT \(grade_scale \? 'bands'\)/);
+ assert.match(server,/bands\.length < 2 \|\| bands\.length > 12/);
+ assert.match(server,/INSERT INTO assessments\(school_id,class_id,subject_id,title,term,maximum_score,published_at,academic_year,grade_scale,pass_mark_snapshot\)/);
+ assert.match(app,/Custom grading scale/);
+ assert.match(app,/Add grade band/);
+ assert.match(app,/function gradingScaleEditor\(\)/);
+ assert.match(app,/Published results snapshot the school’s grading scale/);
+ assert.match(domain,/gradeScale: structuredClone\(state\.settings\.gradeScale\)/);
+});
 test('self-onboarding creates an invited workspace and starts trials only after activation',async()=>{
  const [server,schema,onboarding]=await Promise.all([
   readFile('apps/school-web/server.mjs','utf8'),
@@ -156,7 +174,7 @@ test('self-onboarding creates an invited workspace and starts trials only after 
  assert.match(server,/status,onboarding_mode,trial_requested/);
  assert.match(server,/pg_advisory_xact_lock\(20261002\)/);
  assert.match(server,/trialCount < 10/);
- assert.match(server,/trial_ends_at=CASE WHEN \$2 THEN now\(\) \+ interval '2 months'/);
+ assert.match(server,/trial_ends_at=CASE WHEN \$2 THEN now\(\) \+ interval '1 month'/);
  assert.match(schema,/trial_ends_at timestamptz/);
 });
 test('student admissions remain pending until a school administrator approves them',async()=>{
@@ -171,11 +189,9 @@ test('student admissions remain pending until a school administrator approves th
  assert.match(server,/status='pending' FOR UPDATE/);
  assert.match(server,/student_admission_applications/);
  assert.match(admissions,/Student registration application/);
- assert.match(product,/D750/);
- assert.match(product,/D1,500/);
- assert.match(product,/D2,000/);
- assert.match(product,/D3,000/);
- assert.match(product,/Custom/);
+ assert.match(product,/Every school receives a custom quote/);
+ assert.match(product,/Request a custom quote/);
+ assert.doesNotMatch(product,/D750|D1,500|D2,000|D3,000/);
 });
 test('platform owner can delete only an unused pending school registration',async()=>{
  const [server,app]=await Promise.all([
@@ -255,12 +271,9 @@ test('platform owner has subscription billing records and access controls',async
  assert.match(app,/Payment overdue/);
  assert.match(app,/Record a school payment/);
  assert.match(app,/billing-access/);
- assert.match(app,/count <= 150/);
- assert.match(app,/count <= 300/);
- assert.match(app,/count <= 600/);
- assert.match(app,/count <= 1000/);
- assert.match(app,/Large school/);
- assert.match(app,/Custom price/);
+ assert.match(app,/Custom quote/);
+ assert.match(app,/Enter the agreed custom amount/);
+ assert.doesNotMatch(app,/count <= 150|count <= 300|count <= 600|count <= 1000/);
 });
 test('public SEO targets product pages while private workflows stay out of search',async()=>{
  const [login,product,onboarding,admissions,sitemap,llms]=await Promise.all([
@@ -275,12 +288,12 @@ test('public SEO targets product pages while private workflows stay out of searc
  assert.match(admissions,/name="robots" content="noindex, follow"/);
  assert.match(product,/"@type": "WebApplication"/);
  assert.match(product,/"@type": "FAQPage"/);
- assert.match(product,/"priceCurrency": "GMD"/);
+ assert.match(product,/"description": "Custom quotation based on each school's requirements"/);
  assert.match(product,/hreflang="en-GM"/);
  assert.match(onboarding,/property="og:title"/);
  assert.doesNotMatch(sitemap,/elegantempireai\.com\/<\/loc>/);
  assert.doesNotMatch(sitemap,/\/admissions/);
- assert.match(llms,/Up to 150 students: D750/);
+ assert.match(llms,/Every school receives a custom quotation/);
 });
 test('onboarding displays a clear validation error instead of silently stopping',async()=>{
  const [html,script]=await Promise.all([

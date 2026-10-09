@@ -17,6 +17,14 @@ ALTER TABLE schools ADD COLUMN IF NOT EXISTS contact_email text;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS contact_phone text;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'pending';
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS grade_scale jsonb NOT NULL DEFAULT '{"A":80,"B":70,"C":60}'::jsonb;
+UPDATE schools SET grade_scale=jsonb_build_object('bands',jsonb_build_array(
+  jsonb_build_object('label','A','min',COALESCE((grade_scale->>'A')::numeric,80),'passing',true),
+  jsonb_build_object('label','B','min',COALESCE((grade_scale->>'B')::numeric,70),'passing',true),
+  jsonb_build_object('label','C','min',COALESCE((grade_scale->>'C')::numeric,60),'passing',true),
+  jsonb_build_object('label','D','min',pass_mark,'passing',true),
+  jsonb_build_object('label','F','min',0,'passing',false)
+)) WHERE NOT (grade_scale ? 'bands');
+ALTER TABLE schools ALTER COLUMN grade_scale SET DEFAULT '{"bands":[{"label":"A","min":80,"passing":true},{"label":"B","min":70,"passing":true},{"label":"C","min":60,"passing":true},{"label":"D","min":50,"passing":true},{"label":"F","min":0,"passing":false}]}'::jsonb;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS cancellation_requested_at timestamptz;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS retention_until timestamptz;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS deletion_requested_at timestamptz;
@@ -395,8 +403,12 @@ CREATE TABLE IF NOT EXISTS assessment_marks (
 ALTER TABLE assessment_marks ADD COLUMN IF NOT EXISTS remark text;
 ALTER TABLE assessments ADD COLUMN IF NOT EXISTS subject_id uuid REFERENCES subjects(id) ON DELETE SET NULL;
 ALTER TABLE assessments ADD COLUMN IF NOT EXISTS academic_year text;
+ALTER TABLE assessments ADD COLUMN IF NOT EXISTS grade_scale jsonb;
+ALTER TABLE assessments ADD COLUMN IF NOT EXISTS pass_mark_snapshot numeric(5,2);
 UPDATE assessments a SET academic_year=s.current_academic_year
 FROM schools s WHERE a.school_id=s.id AND a.academic_year IS NULL;
+UPDATE assessments a SET grade_scale=s.grade_scale,pass_mark_snapshot=s.pass_mark
+FROM schools s WHERE a.school_id=s.id AND (a.grade_scale IS NULL OR a.pass_mark_snapshot IS NULL);
 
 ALTER TABLE timetable_entries ADD COLUMN IF NOT EXISTS academic_year text;
 ALTER TABLE timetable_entries ADD COLUMN IF NOT EXISTS term text;

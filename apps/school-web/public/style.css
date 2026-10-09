@@ -642,6 +642,9 @@ label {
   flex-direction: column;
   gap: 7px;
 }
+.grading-scale-editor { grid-column: 1 / -1; }
+.grading-scale-editor table input,
+.grading-scale-editor table select { min-width: 110px; }
 .field input,
 .field select,
 .field textarea {

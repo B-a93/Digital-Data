@@ -182,6 +182,7 @@ export function publishResults(state, className, subjectName = "General") {
     term: state.settings.term,
     version,
     pass: state.settings.pass,
+    gradeScale: structuredClone(state.settings.gradeScale),
     date: new Date().toISOString(),
     entries,
   };
