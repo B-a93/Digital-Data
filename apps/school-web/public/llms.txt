@@ -10,17 +10,11 @@ Primary market: The Gambia
 
 ## Founding-schools offer
 
-The first 10 eligible schools receive two months of full portal access free with guided onboarding. There is no automatic charge at the end of the trial. Schools may choose a paid plan or stop using the service. Availability and eligibility are confirmed during onboarding.
+Eligible schools receive one month of full portal access free with guided onboarding. There is no automatic charge at the end of the trial. Schools may accept their custom quotation or stop using the service. Eligibility is confirmed during onboarding.
 
-## Monthly pricing in Gambian dalasi
+## Custom quotation
 
-- Up to 150 students: D750
-- 151 to 300 students: D1,500
-- 301 to 600 students: D2,000
-- 601 to 1,000 students: D3,000
-- More than 1,000 students: custom price
-
-Annual payment provides 12 months of service for the price of 10 months. Self-onboarding is free. Assisted data import and paper-record digitisation are assessed separately.
+Every school receives a custom quotation based on enrolment, selected features, onboarding support, data-import work and any additional services. The school approves the quotation before paid service begins.
 
 ## What the platform manages
 

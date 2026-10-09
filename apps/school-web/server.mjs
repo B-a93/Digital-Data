@@ -574,7 +574,7 @@ const server = http.createServer(async (req, res) => {
           [context.school_id],
         ),
         query(
-          `SELECT id,class_id,subject_id,title,academic_year,term,maximum_score,published_at,created_at
+          `SELECT id,class_id,subject_id,title,academic_year,term,maximum_score,published_at,grade_scale,pass_mark_snapshot,created_at
            FROM assessments WHERE school_id=$1 ORDER BY created_at`,
           [context.school_id],
         ),
@@ -1523,11 +1523,15 @@ const server = http.createServer(async (req, res) => {
         name = String(data.name || "").trim(),
         term = String(data.term || "").trim(),
         passMark = Number(data.passMark),
-        gradeScale = {
-          A: Number(data.gradeScale?.A),
-          B: Number(data.gradeScale?.B),
-          C: Number(data.gradeScale?.C),
-        };
+        gradeScale = { bands: Array.isArray(data.gradeScale?.bands) ? data.gradeScale.bands.map((band) => ({
+          label: String(band.label || "").trim(),
+          min: Number(band.min),
+          passing: Boolean(band.passing),
+        })) : [] };
+      const bands = gradeScale.bands,
+        labels = new Set(bands.map((band) => band.label.toLowerCase())),
+        minimums = new Set(bands.map((band) => band.min)),
+        derivedPassMark = Math.min(...bands.filter((band) => band.passing).map((band) => band.min));
       if (
         !name ||
         name.length > 100 ||
@@ -1536,13 +1540,11 @@ const server = http.createServer(async (req, res) => {
         !Number.isFinite(passMark) ||
         passMark < 0 ||
         passMark > 100 ||
-        !Number.isFinite(gradeScale.A) ||
-        !Number.isFinite(gradeScale.B) ||
-        !Number.isFinite(gradeScale.C) ||
-        gradeScale.A > 100 ||
-        gradeScale.A <= gradeScale.B ||
-        gradeScale.B <= gradeScale.C ||
-        gradeScale.C < passMark
+        bands.length < 2 || bands.length > 12 || labels.size !== bands.length || minimums.size !== bands.length ||
+        bands.some((band) => !band.label || band.label.length > 12 || !Number.isFinite(band.min) || band.min < 0 || band.min > 100) ||
+        bands.some((band,index) => index && band.min >= bands[index - 1].min) ||
+        bands.at(-1)?.min !== 0 || !bands.some((band) => band.passing) || !bands.some((band) => !band.passing) ||
+        !Number.isFinite(derivedPassMark) || passMark !== derivedPassMark
       ) {
         json(res, 400, { error: "Enter valid school settings." });
         return;
@@ -1779,14 +1781,14 @@ const server = http.createServer(async (req, res) => {
               await query(
                 `WITH latest AS (
                    SELECT DISTINCT ON (COALESCE(su.name,'General'))
-                     a.id,COALESCE(su.name,'General') AS subject_name,a.maximum_score
+                     a.id,COALESCE(su.name,'General') AS subject_name,a.maximum_score,a.grade_scale,a.pass_mark_snapshot
                    FROM assessments a
                    JOIN assessment_marks own ON own.assessment_id=a.id AND own.student_id=$2
                    LEFT JOIN subjects su ON su.id=a.subject_id
                    WHERE a.school_id=$1 AND a.term=$3 AND a.published_at IS NOT NULL
                    ORDER BY COALESCE(su.name,'General'),a.published_at DESC
                  )
-                 SELECT l.subject_name,am.score,l.maximum_score,COALESCE(am.remark,'') AS remark
+                 SELECT l.subject_name,am.score,l.maximum_score,l.grade_scale,l.pass_mark_snapshot,COALESCE(am.remark,'') AS remark
                  FROM latest l JOIN assessment_marks am ON am.assessment_id=l.id
                  WHERE am.student_id=$2 ORDER BY l.subject_name`,
                 [context.school_id, student.id, student.current_term],
@@ -2601,7 +2603,7 @@ const server = http.createServer(async (req, res) => {
         }
         const assessment = (
           await query(
-            `SELECT a.id,a.title,a.academic_year,a.term,a.maximum_score,a.published_at,COALESCE(su.name,'General') AS subject_name,
+            `SELECT a.id,a.title,a.academic_year,a.term,a.maximum_score,a.published_at,a.grade_scale,a.pass_mark_snapshot,COALESCE(su.name,'General') AS subject_name,
               (SELECT count(*) FROM assessments versions
                WHERE versions.school_id=a.school_id AND versions.class_id=a.class_id
                AND versions.academic_year=a.academic_year AND versions.term=a.term
@@ -2682,9 +2684,9 @@ const server = http.createServer(async (req, res) => {
             );
           const assessment = (
             await client.query(
-              `INSERT INTO assessments(school_id,class_id,subject_id,title,term,maximum_score,published_at,academic_year)
-               SELECT $1,$2,$3,$4,$5,100,now(),current_academic_year FROM schools WHERE id=$1
-               RETURNING id,published_at,academic_year`,
+              `INSERT INTO assessments(school_id,class_id,subject_id,title,term,maximum_score,published_at,academic_year,grade_scale,pass_mark_snapshot)
+               SELECT $1,$2,$3,$4,$5,100,now(),current_academic_year,grade_scale,pass_mark FROM schools WHERE id=$1
+               RETURNING id,published_at,academic_year,grade_scale,pass_mark_snapshot`,
               [
                 context.school_id,
                 schoolClass.id,
@@ -2778,7 +2780,7 @@ const server = http.createServer(async (req, res) => {
         results = await query(
           `WITH latest AS (
              SELECT DISTINCT ON (COALESCE(su.name,'General'))
-               a.id,COALESCE(su.name,'General') AS subject_name,a.maximum_score
+               a.id,COALESCE(su.name,'General') AS subject_name,a.maximum_score,a.grade_scale,a.pass_mark_snapshot
              FROM assessments a
              JOIN classes c ON c.id=a.class_id
              LEFT JOIN subjects su ON su.id=a.subject_id
@@ -2787,7 +2789,7 @@ const server = http.createServer(async (req, res) => {
                AND a.published_at IS NOT NULL
              ORDER BY COALESCE(su.name,'General'),a.published_at DESC
            )
-           SELECT am.student_id,st.student_number,st.full_name,l.subject_name,am.score,l.maximum_score,COALESCE(am.remark,'') AS remark
+           SELECT am.student_id,st.student_number,st.full_name,l.subject_name,am.score,l.maximum_score,l.grade_scale,l.pass_mark_snapshot,COALESCE(am.remark,'') AS remark
            FROM latest l JOIN assessment_marks am ON am.assessment_id=l.id
            JOIN students st ON st.id=am.student_id
            ORDER BY l.subject_name`,
@@ -3193,7 +3195,7 @@ const server = http.createServer(async (req, res) => {
               `UPDATE schools SET status='active',
                        trial_status=CASE WHEN $2 THEN 'active' ELSE trial_status END,
                        trial_started_at=CASE WHEN $2 THEN now() ELSE trial_started_at END,
-                       trial_ends_at=CASE WHEN $2 THEN now() + interval '2 months' ELSE trial_ends_at END,
+                       trial_ends_at=CASE WHEN $2 THEN now() + interval '1 month' ELSE trial_ends_at END,
                        updated_at=now()
                WHERE id=$1`,
               [found.school_id, trialGranted],

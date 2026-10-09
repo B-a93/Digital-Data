@@ -87,7 +87,11 @@ state.settings.feeTypes ||= [
   ]),
 ];
 state.settings.subjects ||= [];
-state.settings.gradeScale ||= { A: 80, B: 70, C: 60 };
+state.settings.gradeScale ||= { bands: [
+  { label: "A", min: 80, passing: true }, { label: "B", min: 70, passing: true },
+  { label: "C", min: 60, passing: true }, { label: "D", min: 50, passing: true },
+  { label: "F", min: 0, passing: false },
+] };
 state.settings.academicYear ||= "2026/27";
 state.remarks ||= {};
 let view = "dashboard",
@@ -152,14 +156,22 @@ const money = (n) =>
 const schoolClasses = () => state.settings.classes;
 const schoolSubjects = () =>
   state.settings.subjects.length ? state.settings.subjects : ["General"];
-const resultGrade = (score, passMark = state.settings.pass) => {
-  const scale = state.settings.gradeScale;
-  if (score >= scale.A) return "A";
-  if (score >= scale.B) return "B";
-  if (score >= scale.C) return "C";
-  if (score >= passMark) return "D";
-  return "F";
-};
+const gradeBands = (scale = state.settings.gradeScale, passMark = state.settings.pass) =>
+  Array.isArray(scale?.bands) && scale.bands.length
+    ? scale.bands
+        .map((band) => ({ label: String(band.label), min: Number(band.min), passing: Boolean(band.passing) }))
+        .sort((a, b) => b.min - a.min)
+    : [
+        { label: "A", min: Number(scale?.A ?? 80), passing: true },
+        { label: "B", min: Number(scale?.B ?? 70), passing: true },
+        { label: "C", min: Number(scale?.C ?? 60), passing: true },
+        { label: "D", min: Number(passMark ?? 50), passing: true },
+        { label: "F", min: 0, passing: false },
+      ];
+const gradeBand = (score, scale = state.settings.gradeScale, passMark = state.settings.pass) =>
+  gradeBands(scale,passMark).find((band) => Number(score) >= band.min) || gradeBands(scale,passMark).at(-1);
+const resultGrade = (score, passMark = state.settings.pass, scale = state.settings.gradeScale) => gradeBand(score,scale,passMark)?.label || "—";
+const resultOutcome = (score, passMark = state.settings.pass, scale = state.settings.gradeScale) => gradeBand(score,scale,passMark)?.passing ? "Pass" : "Below threshold";
 const activeStudents = () =>
   state.students.filter((student) => (student.status || "active") === "active");
 const options = (items, current) =>
@@ -395,18 +407,9 @@ const platformSchoolCount = (school) =>
   Number(school.student_count || school.estimated_student_count || 0);
 function platformPlan(school) {
   const count = platformSchoolCount(school);
-  if (count <= 150)
-    return { name: "Starter", range: "Up to 150 students", amount: 75000, custom: false };
-  if (count <= 300)
-    return { name: "Small", range: "151–300 students", amount: 150000, custom: false };
-  if (count <= 600)
-    return { name: "Growing", range: "301–600 students", amount: 200000, custom: false };
-  if (count <= 1000)
-    return { name: "Established", range: "601–1,000 students", amount: 300000, custom: false };
-  return { name: "Large school", range: "More than 1,000 students", amount: null, custom: true };
+  return { name: "Custom quote", range: `${count} student${count === 1 ? "" : "s"}`, amount: null, custom: true };
 }
-const platformPlanPrice = (plan) =>
-  plan.custom ? "Custom price" : `${money(plan.amount)}/month`;
+const platformPlanPrice = () => "Agreed per school";
 function platformBillingStatus(school) {
   if (["cancelled", "pending_deletion"].includes(school.status))
     return school.status;
@@ -463,8 +466,8 @@ function platformBillingPage() {
       "Monitor trials, record payments and control school access.",
     ) +
     `<div class="cards billing-summary"><div class="card"><div class="card-label">Free trials</div><div class="number">${totals.trial}</div></div><div class="card"><div class="card-label">Paid & active</div><div class="number">${totals.paid}</div></div><div class="card"><div class="card-label">Payment overdue</div><div class="number">${totals.overdue}</div></div><div class="card"><div class="card-label">Suspended</div><div class="number">${totals.suspended}</div></div></div>
-    <div class="stack"><section class="panel"><div class="panel-heading"><div><h2>Record a school payment</h2><p>The monthly amount is calculated from the school’s enrolment tier. Schools above 1,000 students use an agreed custom price.</p></div><span class="badge gray">Platform owner only</span></div><form id="subscription-payment-form"><div class="form-grid"><div class="field"><label for="billing-school">School</label><select id="billing-school" name="schoolId" required>${payable.map((school) => { const plan = platformPlan(school); return `<option value="${esc(school.id)}">${esc(school.name)} · ${platformSchoolCount(school)} students · ${esc(plan.name)} · ${esc(platformPlanPrice(plan))}</option>`; }).join("")}</select></div><div class="field"><label for="billing-amount">Amount received (dalasi)</label><input id="billing-amount" name="amount" inputmode="decimal" placeholder="Enter the verified amount" required></div><div class="field"><label for="billing-method">Payment method</label><select id="billing-method" name="paymentMethod"><option value="cash">Cash</option><option value="wave">Wave</option><option value="bank_transfer">Bank transfer</option><option value="card">Card</option><option value="other">Other</option></select></div><div class="field"><label for="billing-reference">Payment reference (optional)</label><input id="billing-reference" name="reference" maxlength="100" placeholder="Wave or bank reference"></div><div class="field"><label for="billing-date">Payment date</label><input id="billing-date" name="paidOn" type="date" value="${localDate()}" required></div><div class="field"><label for="billing-months">Months covered</label><input id="billing-months" name="coverageMonths" type="number" min="1" max="24" value="1" required></div></div><div class="form-actions"><button class="button" ${payable.length ? "" : "disabled"}>Record payment</button></div><div id="billing-error" class="error" role="alert"></div></form></section>
-    <section class="panel"><div class="panel-heading"><div><h2>School subscription status</h2><p>${shown.length} of ${schools.length} schools shown</p></div><div class="toolbar"><label for="billing-filter">Filter</label><select id="billing-filter"><option value="all">All schools</option>${["trial", "paid", "overdue", "suspended", "pending", "cancelled", "pending_deletion"].map((status) => `<option value="${status}" ${billingFilter === status ? "selected" : ""}>${billingStatusLabel(status)}</option>`).join("")}</select><button id="refresh-billing" class="text-button">Refresh</button></div></div>${table(["School", "Pricing", "Trial / paid until", "Last payment", "Status", "Action"], shown.map((school) => { const plan = platformPlan(school), status = school.billingState; return `<tr><td><span class="student-name">${esc(school.name)}</span><span class="sub">${platformSchoolCount(school)} students · ${esc(school.administrator_email || "")}</span></td><td>${esc(plan.name)}<span class="sub">${esc(plan.range)} · ${esc(platformPlanPrice(plan))}</span></td><td>${status === "trial" ? `Trial: ${platformDate(school.trial_ends_at)}` : `Paid: ${platformDate(school.subscription_paid_until)}`}</td><td>${school.last_payment_date ? `${money(Number(school.last_payment_amount))}<span class="sub">${platformDate(school.last_payment_date)} · ${esc(String(school.last_payment_method || "").replaceAll("_", " "))}</span>` : "—"}</td><td><span class="badge ${["overdue", "suspended", "cancelled", "pending_deletion"].includes(status) ? "amber" : ""}">${esc(billingStatusLabel(status))}</span></td><td>${["active", "suspended"].includes(school.status) ? `<button class="text-button billing-access" data-id="${esc(school.id)}" data-name="${esc(school.name)}" data-action="${status === "suspended" ? "reactivate" : "suspend"}">${status === "suspended" ? "Reactivate" : "Suspend"}</button>` : "—"}</td></tr>`; }).join(""))}</section>
+    <div class="stack"><section class="panel"><div class="panel-heading"><div><h2>Record a school payment</h2><p>Enter the amount confirmed in the school’s accepted custom quotation.</p></div><span class="badge gray">Platform owner only</span></div><form id="subscription-payment-form"><div class="form-grid"><div class="field"><label for="billing-school">School</label><select id="billing-school" name="schoolId" required>${payable.map((school) => { const plan = platformPlan(school); return `<option value="${esc(school.id)}">${esc(school.name)} · ${platformSchoolCount(school)} students · ${esc(plan.name)}</option>`; }).join("")}</select></div><div class="field"><label for="billing-amount">Amount received (dalasi)</label><input id="billing-amount" name="amount" inputmode="decimal" placeholder="Enter the agreed amount" required></div><div class="field"><label for="billing-method">Payment method</label><select id="billing-method" name="paymentMethod"><option value="cash">Cash</option><option value="wave">Wave</option><option value="bank_transfer">Bank transfer</option><option value="card">Card</option><option value="other">Other</option></select></div><div class="field"><label for="billing-reference">Payment or quote reference (optional)</label><input id="billing-reference" name="reference" maxlength="100" placeholder="Quotation, Wave or bank reference"></div><div class="field"><label for="billing-date">Payment date</label><input id="billing-date" name="paidOn" type="date" value="${localDate()}" required></div><div class="field"><label for="billing-months">Months covered</label><input id="billing-months" name="coverageMonths" type="number" min="1" max="24" value="1" required></div></div><div class="form-actions"><button class="button" ${payable.length ? "" : "disabled"}>Record payment</button></div><div id="billing-error" class="error" role="alert"></div></form></section>
+    <section class="panel"><div class="panel-heading"><div><h2>School subscription status</h2><p>${shown.length} of ${schools.length} schools shown</p></div><div class="toolbar"><label for="billing-filter">Filter</label><select id="billing-filter"><option value="all">All schools</option>${["trial", "paid", "overdue", "suspended", "pending", "cancelled", "pending_deletion"].map((status) => `<option value="${status}" ${billingFilter === status ? "selected" : ""}>${billingStatusLabel(status)}</option>`).join("")}</select><button id="refresh-billing" class="text-button">Refresh</button></div></div>${table(["School", "Pricing", "Trial / paid until", "Last payment", "Status", "Action"], shown.map((school) => { const plan = platformPlan(school), status = school.billingState; return `<tr><td><span class="student-name">${esc(school.name)}</span><span class="sub">${platformSchoolCount(school)} students · ${esc(school.administrator_email || "")}</span></td><td>${esc(plan.name)}<span class="sub">${esc(platformPlanPrice(plan))}</span></td><td>${status === "trial" ? `Trial: ${platformDate(school.trial_ends_at)}` : `Paid: ${platformDate(school.subscription_paid_until)}`}</td><td>${school.last_payment_date ? `${money(Number(school.last_payment_amount))}<span class="sub">${platformDate(school.last_payment_date)} · ${esc(String(school.last_payment_method || "").replaceAll("_", " "))}</span>` : "—"}</td><td><span class="badge ${["overdue", "suspended", "cancelled", "pending_deletion"].includes(status) ? "amber" : ""}">${esc(billingStatusLabel(status))}</span></td><td>${["active", "suspended"].includes(school.status) ? `<button class="text-button billing-access" data-id="${esc(school.id)}" data-name="${esc(school.name)}" data-action="${status === "suspended" ? "reactivate" : "suspend"}">${status === "suspended" ? "Reactivate" : "Suspend"}</button>` : "—"}</td></tr>`; }).join(""))}</section>
     <section class="panel"><div class="panel-heading"><h2>Recent subscription payments</h2><small>Latest ${platformBilling.payments.length}</small></div>${table(["Date", "School", "Amount", "Method / reference", "Coverage"], platformBilling.payments.map((payment) => `<tr><td>${platformDate(payment.paid_on)}</td><td>${esc(payment.school_name)}</td><td>${money(Number(payment.amount_bututs))}</td><td>${esc(String(payment.payment_method).replaceAll("_", " "))}<span class="sub">${esc(payment.payment_reference || "No reference")}</span></td><td>${payment.coverage_months} month${payment.coverage_months === 1 ? "" : "s"}<span class="sub">Until ${platformDate(payment.coverage_ends_on)}</span></td></tr>`).join(""))}</section></div>`
   );
 }
@@ -696,7 +699,8 @@ async function loadSchoolResults(
     subject: data.assessment.subject_name || subjectName,
     term: data.assessment.term,
     version: Number(data.assessment.version),
-    pass: state.settings.pass,
+    pass: Number(data.assessment.pass_mark_snapshot ?? state.settings.pass),
+    gradeScale: data.assessment.grade_scale || state.settings.gradeScale,
     entries: data.marks.map((mark) => ({
       id: mark.student_id,
       admission: mark.student_number,
@@ -961,6 +965,8 @@ async function openStudentProfile(studentId) {
         score: Number(result.score),
         maximum: Number(result.maximum_score),
         remark: result.remark || "",
+        gradeScale: result.grade_scale || state.settings.gradeScale,
+        pass: Number(result.pass_mark_snapshot ?? state.settings.pass),
       }));
       permissions = data.permissions;
     } else {
@@ -1024,7 +1030,7 @@ async function openStudentProfile(studentId) {
             academicResults
               .map((result) => {
                 const percentage = (result.score / result.maximum) * 100;
-                return `<tr><td>${esc(result.subject)}</td><td>${result.score} / ${result.maximum}</td><td>${resultGrade(percentage)}</td><td>${percentage >= state.settings.pass ? "Pass" : "Below threshold"}</td><td>${esc(result.remark || "—")}</td></tr>`;
+                return `<tr><td>${esc(result.subject)}</td><td>${result.score} / ${result.maximum}</td><td>${esc(resultGrade(percentage,result.pass,result.gradeScale))}</td><td>${resultOutcome(percentage,result.pass,result.gradeScale)}</td><td>${esc(result.remark || "—")}</td></tr>`;
               })
               .join(""),
           )}</section><section><h2>Attendance summary</h2><div class="summary"><span>Marked: <strong>${Number(attendance?.marked || 0)}</strong></span><span>Present: <strong>${Number(attendance?.present || 0)}</strong></span><span>Late: <strong>${Number(attendance?.late || 0)}</strong></span><span>Absent: <strong>${Number(attendance?.absent || 0)}</strong></span><span>Excused: <strong>${Number(attendance?.excused || 0)}</strong></span><span>Rate: <strong>${attendanceRate === null ? "—" : attendanceRate + "%"}</strong></span></div></section>`
@@ -1451,7 +1457,7 @@ function results() {
         : "Prepare a single demo assessment, then publish a versioned snapshot.",
       '<button class="button secondary" id="print-report-cards">Print class report cards</button>',
     ) +
-    `<section class="panel"><div class="toolbar"><label for="res-term">Term</label><select id="res-term">${options(resultTerms, selectedResultTerm)}</select><label for="res-class">Class</label><select id="res-class">${options(schoolClasses(), selectedClass)}</select><label for="res-subject">Subject</label><select id="res-subject">${options(schoolSubjects(), selectedSubject)}</select><span class="badge ${historical ? "amber" : "gray"}">${historical ? "Historical · read only" : "Current term · /100"}</span><span class="status-text">Pass threshold: ${state.settings.pass}</span></div>${table(["Student", historical ? "Published mark /100" : "Draft mark /100", "Teacher remark"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><input class="money-input mark-input" type="number" min="0" max="100" step="0.01" data-student="${s.id}" aria-label="Mark for ${esc(s.name)}" value="${state.marks[s.id] ?? ""}" ${historical ? "disabled" : ""}></td><td><input class="remark-input" maxlength="160" data-student="${s.id}" aria-label="Remark for ${esc(s.name)}" placeholder="Optional remark" value="${esc(state.remarks[s.id] || "")}" ${historical ? "disabled" : ""}></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="publish" ${historical ? "disabled" : ""}>Approve & publish ${schoolDataLive ? "results" : "demo results"}</button><span class="status-text">${historical ? "Historical results cannot be changed." : schoolDataLive ? "Draft marks are stored securely in Neon." : "Draft marks save on change in this browser."}</span></div><div class="error" id="form-error" role="alert"></div><div class="note">Published results are versioned by class, subject and term, and do not change when draft marks are edited.</div></section>${snap ? `<section class="panel"><div class="panel-heading"><div><h2>${esc(snap.subject || "General")} · published version ${snap.version}</h2><small>${esc(snap.term)}</small></div><div class="quick-actions"><button class="button secondary" id="print-results">Print report</button><button class="button secondary" id="results-csv">Download CSV</button></div></div>${table(["Student", "Published score", "Grade", "Outcome", "Remark"], snap.entries.map((e) => `<tr><td>${esc(e.name)}</td><td>${e.score}</td><td>${resultGrade(e.score, snap.pass)}</td><td><span class="badge ${e.score >= snap.pass ? "" : "amber"}">${e.score >= snap.pass ? "Pass" : "Below threshold"}</span></td><td>${esc(e.remark || "—")}</td></tr>`).join(""))}</section>` : ""}`
+    `<section class="panel"><div class="toolbar"><label for="res-term">Term</label><select id="res-term">${options(resultTerms, selectedResultTerm)}</select><label for="res-class">Class</label><select id="res-class">${options(schoolClasses(), selectedClass)}</select><label for="res-subject">Subject</label><select id="res-subject">${options(schoolSubjects(), selectedSubject)}</select><span class="badge ${historical ? "amber" : "gray"}">${historical ? "Historical · read only" : "Current term · /100"}</span><span class="status-text">Pass threshold: ${state.settings.pass}</span></div>${table(["Student", historical ? "Published mark /100" : "Draft mark /100", "Teacher remark"], list.map((s) => `<tr><td>${studentCell(s)}</td><td><input class="money-input mark-input" type="number" min="0" max="100" step="0.01" data-student="${s.id}" aria-label="Mark for ${esc(s.name)}" value="${state.marks[s.id] ?? ""}" ${historical ? "disabled" : ""}></td><td><input class="remark-input" maxlength="160" data-student="${s.id}" aria-label="Remark for ${esc(s.name)}" placeholder="Optional remark" value="${esc(state.remarks[s.id] || "")}" ${historical ? "disabled" : ""}></td></tr>`).join(""))}<div class="form-actions"><button class="button" id="publish" ${historical ? "disabled" : ""}>Approve & publish ${schoolDataLive ? "results" : "demo results"}</button><span class="status-text">${historical ? "Historical results cannot be changed." : schoolDataLive ? "Draft marks are stored securely in Neon." : "Draft marks save on change in this browser."}</span></div><div class="error" id="form-error" role="alert"></div><div class="note">Published results snapshot the school’s grading scale, class, subject and term. Later grading changes cannot alter historical grades.</div></section>${snap ? `<section class="panel"><div class="panel-heading"><div><h2>${esc(snap.subject || "General")} · published version ${snap.version}</h2><small>${esc(snap.term)}</small></div><div class="quick-actions"><button class="button secondary" id="print-results">Print report</button><button class="button secondary" id="results-csv">Download CSV</button></div></div>${table(["Student", "Published score", "Grade", "Outcome", "Remark"], snap.entries.map((e) => { const outcome=resultOutcome(e.score,snap.pass,snap.gradeScale); return `<tr><td>${esc(e.name)}</td><td>${e.score}</td><td>${esc(resultGrade(e.score,snap.pass,snap.gradeScale))}</td><td><span class="badge ${outcome === "Pass" ? "" : "amber"}">${outcome}</span></td><td>${esc(e.remark || "—")}</td></tr>`; }).join(""))}</section>` : ""}`
   );
 }
 async function printClassReportCards() {
@@ -1480,6 +1486,8 @@ async function printClassReportCards() {
         score: Number(result.score),
         maximum: Number(result.maximum_score),
         remark: result.remark || "",
+        gradeScale: result.grade_scale || state.settings.gradeScale,
+        pass: Number(result.pass_mark_snapshot ?? state.settings.pass),
       }));
       students = [
         ...new Map(
@@ -1515,6 +1523,8 @@ async function printClassReportCards() {
           score: Number(entry.score),
           maximum: 100,
           remark: entry.remark || "",
+          gradeScale: snapshot.gradeScale || state.settings.gradeScale,
+          pass: Number(snapshot.pass ?? state.settings.pass),
         })),
       );
     }
@@ -1532,16 +1542,16 @@ async function printClassReportCards() {
               ) / marks.length
             : 0,
           passed = marks.filter(
-            (mark) => (mark.score / mark.maximum) * 100 >= state.settings.pass,
+            (mark) => resultOutcome((mark.score / mark.maximum) * 100,mark.pass,mark.gradeScale) === "Pass",
           ).length;
         return `<section class="report-card"><header><h1>${esc(state.settings.name)}</h1><div>Student Report Card · ${esc(state.settings.term)}</div></header><div class="details"><div><strong>Student:</strong> ${esc(student.name)}</div><div><strong>Student number:</strong> ${esc(student.admission)}</div><div><strong>Class:</strong> ${esc(selectedClass)}</div><div><strong>Subjects published:</strong> ${marks.length}</div></div><table><thead><tr><th>Subject</th><th>Score</th><th>Grade</th><th>Outcome</th><th>Teacher remark</th></tr></thead><tbody>${marks
           .map((mark) => {
             const percentage = (mark.score / mark.maximum) * 100;
-            return `<tr><td>${esc(mark.subject)}</td><td>${mark.score} / ${mark.maximum}</td><td>${resultGrade(percentage)}</td><td>${percentage >= state.settings.pass ? "Pass" : "Below threshold"}</td><td>${esc(mark.remark || "—")}</td></tr>`;
+            return `<tr><td>${esc(mark.subject)}</td><td>${mark.score} / ${mark.maximum}</td><td>${esc(resultGrade(percentage,mark.pass,mark.gradeScale))}</td><td>${resultOutcome(percentage,mark.pass,mark.gradeScale)}</td><td>${esc(mark.remark || "—")}</td></tr>`;
           })
           .join(
             "",
-          )}</tbody></table><div class="summary"><span>Average: <strong>${average.toFixed(1)}%</strong></span><span>Overall grade: <strong>${resultGrade(average)}</strong></span><span>Subjects passed: <strong>${passed} of ${marks.length}</strong></span><span>Overall: <strong>${marks.length && average >= state.settings.pass ? "Pass" : "Below threshold"}</strong></span></div><div class="signatures"><span>Class teacher</span><span>Head teacher</span></div></section>`;
+          )}</tbody></table><div class="summary"><span>Average: <strong>${average.toFixed(1)}%</strong></span><span>Overall grade: <strong>${esc(resultGrade(average))}</strong></span><span>Subjects passed: <strong>${passed} of ${marks.length}</strong></span><span>Overall: <strong>${marks.length ? resultOutcome(average) : "Below threshold"}</strong></span></div><div class="signatures"><span>Class teacher</span><span>Head teacher</span></div></section>`;
       })
       .join("")
       .replaceAll(
@@ -1576,7 +1586,7 @@ function printResultsReport() {
   }
   const popup = window.open("", "_blank"),
     passed = result.entries.filter(
-      (entry) => entry.score >= result.pass,
+      (entry) => resultOutcome(entry.score,result.pass,result.gradeScale) === "Pass",
     ).length,
     average = result.entries.length
       ? result.entries.reduce((sum, entry) => sum + entry.score, 0) /
@@ -1587,7 +1597,7 @@ function printResultsReport() {
     return;
   }
   popup.document.write(
-    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Results ${esc(selectedClass)}</title><style>@page{size:A4 portrait;margin:14mm}body{font:12px Arial;color:#203330;margin:0;padding:16px}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:20px}h1{margin:0 0 6px}.summary{display:flex;gap:18px;flex-wrap:wrap;margin:14px 0}.summary span{padding:7px 10px;background:#edf5ef;border-radius:5px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce6e1;text-align:left}th{background:#eaf4ef}button{margin:18px 0;padding:10px 15px;background:#146a56;color:#fff;border:0;border-radius:6px}@media print{button{display:none}body{padding:0}}</style></head><body><header><h1>${esc(state.settings.name)}</h1><div>Published results · ${esc(selectedClass)} · ${esc(result.subject || "General")} · ${esc(result.term)} · Version ${result.version}</div></header><div class="summary"><span>Students: ${result.entries.length}</span><span>Class average: ${average.toFixed(1)}%</span><span>Passed: ${passed}</span><span>Below threshold: ${result.entries.length - passed}</span><span>Pass mark: ${result.pass}%</span></div><table><thead><tr><th>Student number</th><th>Student name</th><th>Score /100</th><th>Grade</th><th>Outcome</th><th>Remark</th></tr></thead><tbody>${result.entries.map((entry) => `<tr><td>${esc(entry.admission)}</td><td>${esc(entry.name)}</td><td>${esc(entry.score)}</td><td>${resultGrade(entry.score, result.pass)}</td><td>${entry.score >= result.pass ? "Pass" : "Below threshold"}</td><td>${esc(entry.remark || "—")}</td></tr>`).join("")}</tbody></table><button onclick="window.print()">Print or save as PDF</button></body></html>`,
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Results ${esc(selectedClass)}</title><style>@page{size:A4 portrait;margin:14mm}body{font:12px Arial;color:#203330;margin:0;padding:16px}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:20px}h1{margin:0 0 6px}.summary{display:flex;gap:18px;flex-wrap:wrap;margin:14px 0}.summary span{padding:7px 10px;background:#edf5ef;border-radius:5px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce6e1;text-align:left}th{background:#eaf4ef}button{margin:18px 0;padding:10px 15px;background:#146a56;color:#fff;border:0;border-radius:6px}@media print{button{display:none}body{padding:0}}</style></head><body><header><h1>${esc(state.settings.name)}</h1><div>Published results · ${esc(selectedClass)} · ${esc(result.subject || "General")} · ${esc(result.term)} · Version ${result.version}</div></header><div class="summary"><span>Students: ${result.entries.length}</span><span>Class average: ${average.toFixed(1)}%</span><span>Passed: ${passed}</span><span>Below threshold: ${result.entries.length - passed}</span><span>Pass mark: ${result.pass}%</span></div><table><thead><tr><th>Student number</th><th>Student name</th><th>Score /100</th><th>Grade</th><th>Outcome</th><th>Remark</th></tr></thead><tbody>${result.entries.map((entry) => `<tr><td>${esc(entry.admission)}</td><td>${esc(entry.name)}</td><td>${esc(entry.score)}</td><td>${esc(resultGrade(entry.score,result.pass,result.gradeScale))}</td><td>${resultOutcome(entry.score,result.pass,result.gradeScale)}</td><td>${esc(entry.remark || "—")}</td></tr>`).join("")}</tbody></table><button onclick="window.print()">Print or save as PDF</button></body></html>`,
   );
   popup.document.close();
 }
@@ -1619,9 +1629,9 @@ function downloadResultsCsv() {
         result.term,
         result.version,
         entry.score,
-        resultGrade(entry.score, result.pass),
+        resultGrade(entry.score, result.pass, result.gradeScale),
         result.pass,
-        entry.score >= result.pass ? "Pass" : "Below threshold",
+        resultOutcome(entry.score, result.pass, result.gradeScale),
         entry.remark || "",
       ]),
     ]),
@@ -1784,6 +1794,12 @@ function staff() {
     `<div class="stack"><section class="panel"><div class="panel-heading"><h2>Invite a staff member</h2><span class="badge gray">Administrator only</span></div><form id="staff-form"><div class="form-grid"><div class="field"><label for="staff-name">Full name</label><input id="staff-name" name="fullName" maxlength="100" required></div><div class="field"><label for="staff-email">Email address</label><input id="staff-email" name="email" type="email" required></div><div class="field"><label for="staff-role">Role</label><select id="staff-role" name="role"><option value="teacher">Teacher</option><option value="finance">Finance</option></select></div></div><div class="form-actions"><button class="button">Send invitation</button><span class="status-text">Personal email addresses can be used.</span></div><div id="staff-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Staff access</h2><small>${schoolStaff.length} staff</small></div>${table(["Staff member", "Role", "Status", "Invited", "Actions"], schoolStaff.map((member) => `<tr><td><span class="student-name">${esc(member.full_name)}</span><span class="sub">${esc(member.email)}</span></td><td><select class="staff-role-select" data-id="${esc(member.id)}" aria-label="Role for ${esc(member.full_name)}"><option value="teacher" ${member.role === "teacher" ? "selected" : ""}>Teacher</option><option value="finance" ${member.role === "finance" ? "selected" : ""}>Finance</option></select></td><td><span class="badge ${member.invitation_status === "accepted" ? "" : "amber"}">${esc(member.invitation_status)}</span></td><td>${esc(new Date(member.invited_at).toLocaleDateString("en-GB"))}</td><td><div class="quick-actions">${member.invitation_status !== "accepted" ? `<button class="text-button resend-staff" data-id="${esc(member.id)}">Resend</button>` : ""}<button class="text-button revoke-staff" data-id="${esc(member.id)}" data-name="${esc(member.full_name)}">${member.invitation_status === "accepted" ? "Deactivate" : "Cancel"}</button></div></td></tr>`).join(""))}</section></div>`
   );
 }
+function gradingBandRow(band = { label: "", min: 0, passing: true }) {
+  return `<tr class="grade-band-row"><td><input class="grade-label" maxlength="12" required value="${esc(band.label)}" aria-label="Grade label"></td><td><input class="grade-min" type="number" min="0" max="100" step="0.01" required value="${Number(band.min)}" aria-label="Minimum score"></td><td><select class="grade-outcome" aria-label="Grade outcome"><option value="pass" ${band.passing ? "selected" : ""}>Pass</option><option value="fail" ${band.passing ? "" : "selected"}>Below threshold</option></select></td><td><button type="button" class="text-button remove-grade-band">Remove</button></td></tr>`;
+}
+function gradingScaleEditor() {
+  return `<div class="field wide grading-scale-editor"><div class="panel-heading"><div><label>Custom grading scale</label><p>Enter bands from the highest minimum score to the lowest. The final band must begin at 0.</p></div><button type="button" class="button secondary" id="add-grade-band">Add grade band</button></div><div class="table-wrap"><table><thead><tr><th>Grade label</th><th>Minimum score (%)</th><th>Outcome</th><th>Action</th></tr></thead><tbody id="grade-bands">${gradeBands().map((band) => gradingBandRow(band)).join("")}</tbody></table></div><div class="note">Examples: A–F, Distinction/Pass/Fail, or another scale chosen by the school. Published results keep the scale used at publication.</div></div>`;
+}
 function settings() {
   const academicPeriodSection = schoolDataLive
     ? `<section class="panel"><div class="panel-heading"><div><h2>Academic year and term</h2><p>Close the current period before opening the next one. Existing attendance, fees and results remain attached to their original period.</p></div><span class="badge">${esc(state.settings.academicYear)} · ${esc(state.settings.term)}</span></div><form id="academic-period-form"><div class="form-grid"><div class="field"><label for="next-academic-year">Next academic year</label><input id="next-academic-year" name="academicYear" required pattern="[0-9]{4}/[0-9]{2}" placeholder="e.g. 2027/28"></div><div class="field"><label for="next-term">Next term</label><input id="next-term" name="term" required maxlength="60" placeholder="e.g. Term 2"></div><div class="field"><label for="period-confirmation">Type the school name to confirm</label><input id="period-confirmation" name="confirmation" required autocomplete="off" placeholder="${esc(state.settings.name)}"></div></div><div class="note">Closing a period cannot erase its records. Teachers and finance staff will begin recording new work under the next period.</div><div class="form-actions"><button class="button secondary">Close current period and start next</button></div><div id="academic-period-error" class="error" role="alert"></div></form>${table(["Academic year", "Term", "Status", "Closed"], academicPeriods.map((period) => `<tr><td>${esc(period.academic_year)}</td><td>${esc(period.term)}</td><td><span class="badge ${period.status === "closed" ? "gray" : ""}">${esc(period.status)}</span></td><td>${period.closed_at ? esc(new Date(period.closed_at).toLocaleDateString("en-GB")) : "—"}</td></tr>`).join(""))}</section>`
@@ -1801,7 +1817,7 @@ function settings() {
         ? "Manage the school details, classes and fee types."
         : "Manage the school details, classes and fee types used in this demo.",
     ) +
-    `<div class="stack"><section class="panel"><form id="settings-form"><div class="form-grid"><div class="field"><label for="school">School display name</label><input name="school" id="school" value="${esc(state.settings.name)}" maxlength="80" required></div><div class="field"><label for="term-label">Current academic period</label><input name="term" id="term-label" value="${esc(state.settings.academicYear)} · ${esc(state.settings.term)}" readonly><input type="hidden" name="currentTerm" value="${esc(state.settings.term)}"></div><div class="field"><label for="pass">Minimum D / pass score</label><input name="pass" id="pass" type="number" min="0" max="100" step="1" required value="${state.settings.pass}"></div><div class="field"><label for="grade-a">Minimum A score</label><input name="gradeA" id="grade-a" type="number" min="0" max="100" step="1" required value="${state.settings.gradeScale.A}"></div><div class="field"><label for="grade-b">Minimum B score</label><input name="gradeB" id="grade-b" type="number" min="0" max="100" step="1" required value="${state.settings.gradeScale.B}"></div><div class="field"><label for="grade-c">Minimum C score</label><input name="gradeC" id="grade-c" type="number" min="0" max="100" step="1" required value="${state.settings.gradeScale.C}"></div></div><div class="form-actions"><button class="button">Save settings</button></div><div class="error" id="form-error" role="alert"></div><div class="note">Grades follow the saved minimums. D starts at the pass score; anything below it is F. Use the academic-period section to change terms.</div></form></section>${academicPeriodSection}<section class="panel"><div class="panel-heading"><h2>Classes and grade levels</h2><small>${schoolClasses().length} configured</small></div><form id="class-form" class="toolbar"><input name="className" maxlength="60" required placeholder="e.g. Grade 10 · A" aria-label="New class name"><button class="button">Add class</button></form><div class="error" id="class-error" role="alert"></div>${table(
+    `<div class="stack"><section class="panel"><form id="settings-form"><div class="form-grid"><div class="field"><label for="school">School display name</label><input name="school" id="school" value="${esc(state.settings.name)}" maxlength="80" required></div><div class="field"><label for="term-label">Current academic period</label><input name="term" id="term-label" value="${esc(state.settings.academicYear)} · ${esc(state.settings.term)}" readonly><input type="hidden" name="currentTerm" value="${esc(state.settings.term)}"></div>${gradingScaleEditor()}</div><div class="form-actions"><button class="button">Save settings</button></div><div class="error" id="form-error" role="alert"></div><div class="note">The pass threshold is calculated from the lowest grade band marked as Pass. Use the academic-period section to change terms.</div></form></section>${academicPeriodSection}<section class="panel"><div class="panel-heading"><h2>Classes and grade levels</h2><small>${schoolClasses().length} configured</small></div><form id="class-form" class="toolbar"><input name="className" maxlength="60" required placeholder="e.g. Grade 10 · A" aria-label="New class name"><button class="button">Add class</button></form><div class="error" id="class-error" role="alert"></div>${table(
       ["Class", "Students", "Action"],
       schoolClasses()
         .map((name) => {
@@ -1870,16 +1886,8 @@ function wire() {
       render();
     };
     $("#billing-school").onchange = (event) => {
-      const school = platformBilling.schools.find(
-        (item) => item.id === event.target.value,
-      );
-      if (school) {
-        const plan = platformPlan(school);
-        $("#billing-amount").value = plan.custom ? "" : (plan.amount / 100).toFixed(2);
-        $("#billing-amount").placeholder = plan.custom
-          ? "Enter the agreed custom amount"
-          : "D5 × registered students";
-      }
+      $("#billing-amount").value = "";
+      $("#billing-amount").placeholder = "Enter the agreed custom amount";
     };
     $("#subscription-payment-form").onsubmit = async (event) => {
       event.preventDefault();
@@ -1921,14 +1929,8 @@ function wire() {
           }
         }),
     );
-    const selected = platformBilling.schools.find(
-      (school) => ["active", "suspended"].includes(school.status),
-    );
-    if (selected && !$("#billing-amount").value) {
-      const plan = platformPlan(selected);
-      if (!plan.custom)
-        $("#billing-amount").value = (plan.amount / 100).toFixed(2);
-    }
+    if (!$("#billing-amount").value)
+      $("#billing-amount").placeholder = "Enter the agreed custom amount";
   }
   if (view === "platform") {
     $("#refresh-schools").onclick = loadSchools;
@@ -3159,33 +3161,52 @@ function wire() {
           }),
       );
     }
+    const bindGradeBandRemoval = () => document.querySelectorAll(".remove-grade-band").forEach((button) =>
+      button.onclick = () => {
+        if (document.querySelectorAll(".grade-band-row").length <= 2) {
+          toast("Keep at least two grade bands.");
+          return;
+        }
+        button.closest("tr").remove();
+      });
+    bindGradeBandRemoval();
+    $("#add-grade-band").onclick = () => {
+      if (document.querySelectorAll(".grade-band-row").length >= 12) {
+        toast("A grading scale can contain up to 12 bands.");
+        return;
+      }
+      const rows = [...document.querySelectorAll(".grade-band-row")],
+        finalRow = rows.at(-1),
+        previousMinimum = Number(rows.at(-2)?.querySelector(".grade-min")?.value || 1),
+        suggestedMinimum = Math.max(0.01, Number((previousMinimum / 2).toFixed(2)));
+      finalRow.insertAdjacentHTML("beforebegin",gradingBandRow({ label: "", min: suggestedMinimum, passing: true }));
+      bindGradeBandRemoval();
+    };
     $("#settings-form").onsubmit = async (e) => {
       e.preventDefault();
       const f = new FormData(e.target),
         name = f.get("school").trim(),
         term = String(f.get("currentTerm") || f.get("term") || "").trim(),
-        pass = Number(f.get("pass")),
-        gradeScale = {
-          A: Number(f.get("gradeA")),
-          B: Number(f.get("gradeB")),
-          C: Number(f.get("gradeC")),
-        };
+        bands = [...document.querySelectorAll(".grade-band-row")].map((row) => ({
+          label: row.querySelector(".grade-label").value.trim(),
+          min: Number(row.querySelector(".grade-min").value),
+          passing: row.querySelector(".grade-outcome").value === "pass",
+        })),
+        gradeScale = { bands },
+        passingMinimums = bands.filter((band) => band.passing).map((band) => band.min),
+        pass = passingMinimums.length ? Math.min(...passingMinimums) : NaN,
+        labels = new Set(bands.map((band) => band.label.toLowerCase())),
+        minimums = new Set(bands.map((band) => band.min));
       if (
         !name ||
         !term ||
-        !Number.isInteger(pass) ||
-        pass < 0 ||
-        pass > 100 ||
-        !Number.isInteger(gradeScale.A) ||
-        !Number.isInteger(gradeScale.B) ||
-        !Number.isInteger(gradeScale.C) ||
-        gradeScale.A > 100 ||
-        gradeScale.A <= gradeScale.B ||
-        gradeScale.B <= gradeScale.C ||
-        gradeScale.C < pass
+        bands.length < 2 || bands.length > 12 || labels.size !== bands.length || minimums.size !== bands.length ||
+        bands.some((band) => !band.label || !Number.isFinite(band.min) || band.min < 0 || band.min > 100) ||
+        bands.some((band,index) => index && band.min >= bands[index - 1].min) || bands.at(-1)?.min !== 0 ||
+        !bands.some((band) => band.passing) || !bands.some((band) => !band.passing)
       ) {
         $("#form-error").textContent =
-          "Use descending grade minimums: A above B, B above C, and C at or above the pass score.";
+          "Use 2–12 unique grade bands in descending order, include pass and fail outcomes, and start the final band at 0.";
         return;
       }
       if (schoolDataLive) {
@@ -3821,7 +3842,7 @@ async function showPortal(session) {
   setText(
     "#workspace-message",
     trialActive
-      ? `Your two-month free trial is active until ${new Date(activeSchool.trialEndsAt).toLocaleDateString("en-GB")}.`
+      ? `Your one-month free trial is active until ${new Date(activeSchool.trialEndsAt).toLocaleDateString("en-GB")}.`
       : "Secure login is active. This workspace contains demonstration records.",
   );
   const resetButton = $("#reset");
@@ -3933,7 +3954,7 @@ async function acceptInvitation(token, session) {
   await showPortal(session);
   toast(
     data.trialGranted
-      ? "School portal activated. Your two-month free trial has started."
+      ? "School portal activated. Your one-month free trial has started."
       : "School portal activated successfully.",
   );
 }
