@@ -1471,9 +1471,18 @@ async function printClassReportCards() {
   );
   try {
     let students, publishedResults;
+    const attendanceByStudent = new Map();
     if (schoolDataLive) {
       const data = await schoolApi(
         `/api/school/report-cards?class=${encodeURIComponent(selectedClass)}&term=${encodeURIComponent(selectedResultTerm)}`,
+      );
+      (data.attendance || []).forEach((item) =>
+        attendanceByStudent.set(item.student_id, {
+          present: Number(item.present),
+          late: Number(item.late),
+          absent: Number(item.absent),
+          excused: Number(item.excused),
+        }),
       );
       students = data.students.map((student) => ({
         id: student.id,
@@ -1527,6 +1536,14 @@ async function printClassReportCards() {
           pass: Number(snapshot.pass ?? state.settings.pass),
         })),
       );
+      for (const student of students) {
+        const counts = { present: 0, late: 0, absent: 0, excused: 0 };
+        Object.values(state.attendance).forEach((record) => {
+          const status = record?.marks?.[student.id];
+          if (status && status in counts) counts[status] += 1;
+        });
+        attendanceByStudent.set(student.id, counts);
+      }
     }
     if (!publishedResults.length)
       throw Error("Publish at least one subject before printing report cards.");
@@ -1543,24 +1560,31 @@ async function printClassReportCards() {
             : 0,
           passed = marks.filter(
             (mark) => resultOutcome((mark.score / mark.maximum) * 100,mark.pass,mark.gradeScale) === "Pass",
-          ).length;
-        return `<section class="report-card"><header><h1>${esc(state.settings.name)}</h1><div>Student Report Card · ${esc(state.settings.term)}</div></header><div class="details"><div><strong>Student:</strong> ${esc(student.name)}</div><div><strong>Student number:</strong> ${esc(student.admission)}</div><div><strong>Class:</strong> ${esc(selectedClass)}</div><div><strong>Subjects published:</strong> ${marks.length}</div></div><table><thead><tr><th>Subject</th><th>Score</th><th>Grade</th><th>Outcome</th><th>Teacher remark</th></tr></thead><tbody>${marks
+          ).length,
+          scale = marks[0]?.gradeScale || state.settings.gradeScale,
+          passMark = marks[0]?.pass ?? state.settings.pass,
+          overallGrade = resultGrade(average, passMark, scale),
+          overallOutcome = marks.length ? resultOutcome(average, passMark, scale) : "Below threshold",
+          attendance = attendanceByStudent.get(student.id) || { present: 0, late: 0, absent: 0, excused: 0 },
+          attendanceDays = attendance.present + attendance.late + attendance.absent,
+          attendanceRate = attendanceDays ? Math.round(((attendance.present + attendance.late) / attendanceDays) * 100) : null,
+          gradeLegend = gradeBands(scale, passMark).map((band, index, bands) => {
+            const upper = index ? bands[index - 1].min - 0.01 : 100;
+            return `${esc(band.label)}: ${band.min}–${upper.toFixed(upper % 1 ? 2 : 0)}${band.passing ? "" : " (below threshold)"}`;
+          }).join(" · ");
+        return `<section class="report-card"><header><div class="school-identity"><span class="school-emblem">${esc(state.settings.name.charAt(0).toUpperCase() || "S")}</span><div><h1>${esc(state.settings.name)}</h1><div>Student Report Card · ${esc(state.settings.academicYear)} · ${esc(selectedResultTerm)}</div></div></div></header><div class="details"><div><strong>Student:</strong> ${esc(student.name)}</div><div><strong>Student number:</strong> ${esc(student.admission)}</div><div><strong>Class:</strong> ${esc(selectedClass)}</div><div><strong>Subjects published:</strong> ${marks.length}</div></div><table><thead><tr><th>Subject</th><th>Score</th><th>Grade</th><th>Outcome</th><th>Teacher remark</th></tr></thead><tbody>${marks
           .map((mark) => {
             const percentage = (mark.score / mark.maximum) * 100;
             return `<tr><td>${esc(mark.subject)}</td><td>${mark.score} / ${mark.maximum}</td><td>${esc(resultGrade(percentage,mark.pass,mark.gradeScale))}</td><td>${resultOutcome(percentage,mark.pass,mark.gradeScale)}</td><td>${esc(mark.remark || "—")}</td></tr>`;
           })
           .join(
             "",
-          )}</tbody></table><div class="summary"><span>Average: <strong>${average.toFixed(1)}%</strong></span><span>Overall grade: <strong>${esc(resultGrade(average))}</strong></span><span>Subjects passed: <strong>${passed} of ${marks.length}</strong></span><span>Overall: <strong>${marks.length ? resultOutcome(average) : "Below threshold"}</strong></span></div><div class="signatures"><span>Class teacher</span><span>Head teacher</span></div></section>`;
+          )}</tbody></table><div class="summary"><span>Average: <strong>${average.toFixed(1)}%</strong></span><span>Overall grade: <strong>${esc(overallGrade)}</strong></span><span>Subjects passed: <strong>${passed} of ${marks.length}</strong></span><span>Overall: <strong>${esc(overallOutcome)}</strong></span></div><section class="attendance-summary"><h2>Attendance summary</h2><div class="summary"><span>Present: <strong>${attendance.present}</strong></span><span>Late: <strong>${attendance.late}</strong></span><span>Absent: <strong>${attendance.absent}</strong></span><span>Excused: <strong>${attendance.excused}</strong></span><span>Rate: <strong>${attendanceRate === null ? "—" : attendanceRate + "%"}</strong></span></div></section><div class="grade-legend"><strong>Grading scale:</strong> ${gradeLegend}</div><div class="signatures"><span>Class teacher</span><span>Head teacher / Principal</span><span>School stamp</span></div></section>`;
       })
-      .join("")
-      .replaceAll(
-        `Student Report Card · ${esc(state.settings.term)}`,
-        `Student Report Card · ${esc(selectedResultTerm)}`,
-      );
+      .join("");
     popup.document.open();
     popup.document.write(
-      `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(selectedClass)} Report Cards</title><style>@page{size:A4 portrait;margin:14mm}body{font:12px Arial;color:#203330;margin:0}.report-card{min-height:250mm;page-break-after:always;box-sizing:border-box;padding:10px}.report-card:last-of-type{page-break-after:auto}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:20px}h1{margin:0 0 6px}.details{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:20px}table{width:100%;border-collapse:collapse}th,td{padding:9px;border:1px solid #dce6e1;text-align:left}th{background:#eaf4ef}.summary{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0}.summary span{padding:8px 11px;background:#edf5ef;border-radius:5px}.signatures{display:flex;justify-content:space-between;margin-top:55px}.signatures span{width:38%;border-top:1px solid #61706c;padding-top:7px;text-align:center}.print{position:fixed;right:18px;top:18px;padding:10px 15px;background:#146a56;color:#fff;border:0;border-radius:6px}@media(max-width:600px){.details{grid-template-columns:1fr}.report-card{overflow-x:auto}table{min-width:480px}}@media print{.print{display:none}.report-card{padding:0}}</style></head><body><button class="print" onclick="window.print()">Print or save as PDF</button>${cards}</body></html>`,
+      `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(selectedClass)} Report Cards</title><style>@page{size:A4 portrait;margin:12mm}body{font:12px Arial;color:#203330;margin:0}.report-card{min-height:255mm;page-break-after:always;box-sizing:border-box;padding:10px}.report-card:last-of-type{page-break-after:auto}header{border-bottom:3px solid #146a56;padding-bottom:12px;margin-bottom:18px}.school-identity{display:flex;align-items:center;gap:12px}.school-emblem{display:grid;place-items:center;width:48px;height:48px;border-radius:12px;background:#146a56;color:#fff;font-size:24px;font-weight:700}h1{margin:0 0 5px}h2{font-size:13px;margin:16px 0 4px}.details{display:grid;grid-template-columns:1fr 1fr;gap:9px 24px;margin-bottom:18px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce6e1;text-align:left}th{background:#eaf4ef}.summary{display:flex;gap:9px;flex-wrap:wrap;margin:14px 0}.summary span{padding:7px 10px;background:#edf5ef;border-radius:5px}.attendance-summary{break-inside:avoid}.grade-legend{font-size:10px;color:#536760;padding:9px;border:1px solid #dce6e1;border-radius:5px}.signatures{display:flex;justify-content:space-between;gap:24px;margin-top:48px}.signatures span{flex:1;border-top:1px solid #61706c;padding-top:7px;text-align:center}.print{position:fixed;right:18px;top:18px;padding:10px 15px;background:#146a56;color:#fff;border:0;border-radius:6px}@media(max-width:600px){.details{grid-template-columns:1fr}.report-card{overflow-x:auto}table{min-width:520px}}@media print{.print{display:none}.report-card{padding:0}}</style></head><body><button class="print" onclick="window.print()">Print or save as PDF</button>${cards}</body></html>`,
     );
     popup.document.close();
   } catch (error) {
@@ -4068,3 +4092,4 @@ $("#reset-password-form").onsubmit = async (e) => {
   }
 };
 initializeAuth();
+

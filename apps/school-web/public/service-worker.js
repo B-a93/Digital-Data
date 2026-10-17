@@ -1,4 +1,4 @@
-const CACHE_NAME = "school-portal-shell-v21";
+const CACHE_NAME = "school-portal-shell-v22";
 const APP_SHELL = [
   "/",
   "/style.css",
@@ -66,3 +66,4 @@ self.addEventListener("fetch", (event) => {
       .catch(() => caches.match(request)),
   );
 });
+
