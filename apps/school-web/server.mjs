@@ -456,7 +456,7 @@ const server = http.createServer(async (req, res) => {
       }
       const membership = await query(
         `SELECT su.role,s.id,s.name,s.slug,s.current_academic_year,s.current_term,s.pass_mark,s.grade_scale,s.school_type,s.status,
-                s.trial_status,s.trial_started_at,s.trial_ends_at
+                s.trial_status,s.trial_started_at,s.trial_ends_at,s.address,s.contact_email,s.contact_phone,s.principal_name,s.logo_data_url
          FROM school_users su JOIN schools s ON s.id=su.school_id
          WHERE su.auth_user_id=$1 AND s.status='active'
          ORDER BY su.created_at LIMIT 1`,
@@ -484,6 +484,11 @@ const server = http.createServer(async (req, res) => {
           trialStatus: row.trial_status,
           trialStartedAt: row.trial_started_at,
           trialEndsAt: row.trial_ends_at,
+          address: row.address,
+          contactEmail: row.contact_email,
+          contactPhone: row.contact_phone,
+          principalName: row.principal_name,
+          logoDataUrl: row.logo_data_url,
         },
       });
       return;
@@ -1522,6 +1527,11 @@ const server = http.createServer(async (req, res) => {
       const data = await readJsonBody(req),
         name = String(data.name || "").trim(),
         term = String(data.term || "").trim(),
+        address = String(data.address || "").trim(),
+        contactEmail = String(data.contactEmail || "").trim(),
+        contactPhone = String(data.contactPhone || "").trim(),
+        principalName = String(data.principalName || "").trim(),
+        logoDataUrl = String(data.logoDataUrl || "").trim(),
         passMark = Number(data.passMark),
         gradeScale = { bands: Array.isArray(data.gradeScale?.bands) ? data.gradeScale.bands.map((band) => ({
           label: String(band.label || "").trim(),
@@ -1544,16 +1554,23 @@ const server = http.createServer(async (req, res) => {
         bands.some((band) => !band.label || band.label.length > 12 || !Number.isFinite(band.min) || band.min < 0 || band.min > 100) ||
         bands.some((band,index) => index && band.min >= bands[index - 1].min) ||
         bands.at(-1)?.min !== 0 || !bands.some((band) => band.passing) || !bands.some((band) => !band.passing) ||
-        !Number.isFinite(derivedPassMark) || passMark !== derivedPassMark
+        !Number.isFinite(derivedPassMark) || passMark !== derivedPassMark ||
+        address.length > 200 || contactEmail.length > 120 || contactPhone.length > 50 || principalName.length > 100 ||
+        (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) ||
+        logoDataUrl.length > 400000 ||
+        (logoDataUrl && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(logoDataUrl))
       ) {
         json(res, 400, { error: "Enter valid school settings." });
         return;
       }
       const settings = (
         await query(
-          `UPDATE schools SET name=$2,pass_mark=$3,grade_scale=$4,updated_at=now()
-           WHERE id=$1 RETURNING id,name,current_academic_year,current_term,pass_mark,grade_scale`,
-          [context.school_id, name, passMark, gradeScale],
+          `UPDATE schools SET name=$2,pass_mark=$3,grade_scale=$4,address=$5,contact_email=$6,
+             contact_phone=$7,principal_name=$8,logo_data_url=$9,updated_at=now()
+           WHERE id=$1 RETURNING id,name,current_academic_year,current_term,pass_mark,grade_scale,
+             address,contact_email,contact_phone,principal_name,logo_data_url`,
+          [context.school_id, name, passMark, gradeScale, address || null, contactEmail || null,
+            contactPhone || null, principalName || null, logoDataUrl || null],
         )
       ).rows[0];
       await recordAudit(
@@ -1566,6 +1583,7 @@ const server = http.createServer(async (req, res) => {
           term,
           passMark,
           gradeScale,
+          brandingUpdated: true,
         },
       );
       json(res, 200, { settings });

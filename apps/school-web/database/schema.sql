@@ -15,6 +15,9 @@ ALTER TABLE schools ADD COLUMN IF NOT EXISTS district text;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS contact_name text;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS contact_email text;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS contact_phone text;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS address text;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS principal_name text;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS logo_data_url text;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'pending';
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS grade_scale jsonb NOT NULL DEFAULT '{"A":80,"B":70,"C":60}'::jsonb;
 UPDATE schools SET grade_scale=jsonb_build_object('bands',jsonb_build_array(
@@ -423,3 +426,4 @@ CREATE INDEX IF NOT EXISTS students_school_class_idx ON students(school_id, clas
 CREATE INDEX IF NOT EXISTS attendance_school_date_idx ON attendance(school_id, attendance_date);
 CREATE INDEX IF NOT EXISTS charges_school_student_idx ON fee_charges(school_id, student_id);
 CREATE INDEX IF NOT EXISTS payments_school_student_idx ON payments(school_id, student_id);
+

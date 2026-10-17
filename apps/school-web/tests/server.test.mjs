@@ -176,6 +176,22 @@ test('printable report cards include term attendance and the saved grading scale
  assert.match(app,/gradeBands\(scale, passMark\)/);
  assert.match(app,/state\.settings\.academicYear/);
 });
+test('schools can save branding for official printable documents',async()=>{
+ const [schema,server,app]=await Promise.all([
+  readFile('apps/school-web/database/schema.sql','utf8'),
+  readFile('apps/school-web/server.mjs','utf8'),
+  readFile('apps/school-web/public/app.js','utf8'),
+ ]);
+ assert.match(schema,/logo_data_url text/);
+ assert.match(schema,/principal_name text/);
+ assert.match(server,/logoDataUrl\.length > 400000/);
+ assert.match(server,/principal_name=\$8,logo_data_url=\$9/);
+ assert.match(app,/School identity and branding/);
+ assert.match(app,/Choose a PNG, JPG or WebP school logo smaller than 280 KB/);
+ assert.match(app,/schoolPrintIdentity/);
+ assert.match(app,/Payment receipt ·/);
+ assert.match(app,/Payment Status Report ·/);
+});
 test('self-onboarding creates an invited workspace and starts trials only after activation',async()=>{
  const [server,schema,onboarding]=await Promise.all([
   readFile('apps/school-web/server.mjs','utf8'),
