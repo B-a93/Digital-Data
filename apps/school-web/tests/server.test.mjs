@@ -163,6 +163,19 @@ test('schools can configure custom grading bands while published results keep th
  assert.match(app,/Published results snapshot the school’s grading scale/);
  assert.match(domain,/gradeScale: structuredClone\(state\.settings\.gradeScale\)/);
 });
+test('printable report cards include term attendance and the saved grading scale',async()=>{
+ const [server,app]=await Promise.all([
+  readFile('apps/school-web/server.mjs','utf8'),
+  readFile('apps/school-web/public/app.js','utf8'),
+ ]);
+ assert.match(server,/COUNT\(\*\) FILTER \(WHERE a\.status='present'\)/);
+ assert.match(server,/attendance: attendance\.rows/);
+ assert.match(app,/Attendance summary/);
+ assert.match(app,/Head teacher \/ Principal/);
+ assert.match(app,/School stamp/);
+ assert.match(app,/gradeBands\(scale, passMark\)/);
+ assert.match(app,/state\.settings\.academicYear/);
+});
 test('self-onboarding creates an invited workspace and starts trials only after activation',async()=>{
  const [server,schema,onboarding]=await Promise.all([
   readFile('apps/school-web/server.mjs','utf8'),
@@ -305,3 +318,4 @@ test('onboarding displays a clear validation error instead of silently stopping'
  assert.match(script,/both Data Import choices/);
  assert.match(script,/scrollIntoView/);
 });
+

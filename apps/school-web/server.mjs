@@ -2794,12 +2794,28 @@ const server = http.createServer(async (req, res) => {
            JOIN students st ON st.id=am.student_id
            ORDER BY l.subject_name`,
           [context.school_id, className, term],
+        ),
+        attendance = await query(
+          `SELECT st.id AS student_id,
+                  COUNT(*) FILTER (WHERE a.status='present')::integer AS present,
+                  COUNT(*) FILTER (WHERE a.status='late')::integer AS late,
+                  COUNT(*) FILTER (WHERE a.status='absent')::integer AS absent,
+                  COUNT(*) FILTER (WHERE a.status='excused')::integer AS excused
+           FROM students st
+           LEFT JOIN attendance a ON a.student_id=st.id AND a.school_id=st.school_id
+             AND a.academic_year=(SELECT current_academic_year FROM schools WHERE id=$1)
+             AND a.term=$3
+           JOIN classes c ON c.id=st.class_id
+           WHERE st.school_id=$1 AND c.name=$2 AND st.status='active'
+           GROUP BY st.id`,
+          [context.school_id, className, term],
         );
       json(res, 200, {
         className,
         term,
         students: students.rows,
         results: results.rows,
+        attendance: attendance.rows,
       });
       return;
     }
@@ -3270,3 +3286,4 @@ server.listen(
       `School portal: http://${process.env.HOST || "0.0.0.0"}:${process.env.PORT || 3000}`,
     ),
 );
+
