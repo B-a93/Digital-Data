@@ -185,6 +185,7 @@ test('schools can save branding for official printable documents',async()=>{
  assert.match(schema,/logo_data_url text/);
  assert.match(schema,/principal_name text/);
  assert.match(server,/logoDataUrl\.length > 400000/);
+ assert.match(server,/readJsonBody\(req, 500000\)/);
  assert.match(server,/principal_name=\$8,logo_data_url=\$9/);
  assert.match(app,/School identity and branding/);
  assert.match(app,/Choose a PNG, JPG or WebP school logo smaller than 280 KB/);
