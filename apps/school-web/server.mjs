@@ -179,6 +179,24 @@ function requireRole(context, ...allowed) {
     { status: 403 },
   );
 }
+
+async function requireTeacherAssignment(context, className, subjectName = null) {
+  if (context.role !== "teacher") return;
+  const result = await query(
+    `SELECT 1 FROM teacher_assignments ta
+     JOIN staff_invitations si ON si.id=ta.staff_invitation_id
+     JOIN classes c ON c.id=ta.class_id
+     JOIN subjects su ON su.id=ta.subject_id
+     WHERE ta.school_id=$1 AND si.auth_user_id=$2 AND si.invitation_status='accepted'
+       AND c.name=$3 AND ($4::text IS NULL OR su.name=$4) LIMIT 1`,
+    [context.school_id, context.id, className, subjectName],
+  );
+  if (!result.rows[0])
+    throw Object.assign(
+      new Error("You are not assigned to this class and subject."),
+      { status: 403 },
+    );
+}
 async function recordAudit(
   context,
   action,
@@ -672,28 +690,49 @@ const server = http.createServer(async (req, res) => {
     if (pathname === "/api/school/students") {
       const context = await requireSchoolContext(req);
       if (req.method === "GET") {
-        const [students, schoolClasses, subjects] = await Promise.all([
+        const teacherOnly = context.role === "teacher";
+        const [students, schoolClasses, subjects, assignments] = await Promise.all([
           query(
             `SELECT st.id,st.student_number,st.full_name,st.guardian_name,st.guardian_phone,
                     st.date_of_birth,st.gender,st.address,st.previous_school,st.admission_date,
                     st.status,c.name AS class_name
              FROM students st LEFT JOIN classes c ON c.id=st.class_id
-             WHERE st.school_id=$1 ORDER BY st.full_name`,
-            [context.school_id],
+             WHERE st.school_id=$1 AND ($2::boolean=false OR EXISTS(
+               SELECT 1 FROM teacher_assignments ta JOIN staff_invitations si ON si.id=ta.staff_invitation_id
+               WHERE ta.school_id=st.school_id AND ta.class_id=st.class_id AND si.auth_user_id=$3
+             )) ORDER BY st.full_name`,
+            [context.school_id, teacherOnly, context.id],
           ),
           query(
-            `SELECT id,name FROM classes WHERE school_id=$1 ORDER BY name`,
-            [context.school_id],
+            `SELECT DISTINCT c.id,c.name FROM classes c
+             LEFT JOIN teacher_assignments ta ON ta.class_id=c.id
+             LEFT JOIN staff_invitations si ON si.id=ta.staff_invitation_id
+             WHERE c.school_id=$1 AND ($2::boolean=false OR si.auth_user_id=$3) ORDER BY c.name`,
+            [context.school_id, teacherOnly, context.id],
           ),
           query(
-            `SELECT id,name FROM subjects WHERE school_id=$1 ORDER BY name`,
-            [context.school_id],
+            `SELECT DISTINCT su.id,su.name FROM subjects su
+             LEFT JOIN teacher_assignments ta ON ta.subject_id=su.id
+             LEFT JOIN staff_invitations si ON si.id=ta.staff_invitation_id
+             WHERE su.school_id=$1 AND ($2::boolean=false OR si.auth_user_id=$3) ORDER BY su.name`,
+            [context.school_id, teacherOnly, context.id],
           ),
+          teacherOnly
+            ? query(
+                `SELECT c.name AS class_name,su.name AS subject_name
+                 FROM teacher_assignments ta
+                 JOIN staff_invitations si ON si.id=ta.staff_invitation_id
+                 JOIN classes c ON c.id=ta.class_id JOIN subjects su ON su.id=ta.subject_id
+                 WHERE ta.school_id=$1 AND si.auth_user_id=$2 ORDER BY c.name,su.name`,
+                [context.school_id, context.id],
+              )
+            : Promise.resolve({ rows: [] }),
         ]);
         json(res, 200, {
           students: students.rows,
           classes: schoolClasses.rows,
           subjects: subjects.rows,
+          assignments: assignments.rows,
         });
         return;
       }
@@ -1021,8 +1060,16 @@ const server = http.createServer(async (req, res) => {
       requireRole(context, "administrator");
       if (req.method === "GET") {
         const result = await query(
-          `SELECT id,full_name,email,role,invitation_status,invited_at,accepted_at
-           FROM staff_invitations WHERE school_id=$1 ORDER BY full_name`,
+          `SELECT si.id,si.full_name,si.email,si.role,si.invitation_status,si.invited_at,si.accepted_at,
+             COALESCE(json_agg(json_build_object('classId',c.id,'className',c.name,
+               'subjectId',su.id,'subjectName',su.name) ORDER BY c.name,su.name)
+               FILTER (WHERE ta.id IS NOT NULL),'[]'::json) AS assignments
+           FROM staff_invitations si
+           LEFT JOIN teacher_assignments ta ON ta.staff_invitation_id=si.id
+           LEFT JOIN classes c ON c.id=ta.class_id
+           LEFT JOIN subjects su ON su.id=ta.subject_id
+           WHERE si.school_id=$1
+           GROUP BY si.id ORDER BY si.full_name`,
           [context.school_id],
         );
         json(res, 200, { staff: result.rows });
@@ -1087,6 +1134,63 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       json(res, 405, { error: "Method not allowed" });
+      return;
+    }
+    const staffAssignmentsRoute = pathname.match(
+      /^\/api\/school\/staff\/([0-9a-f-]{36})\/assignments$/,
+    );
+    if (staffAssignmentsRoute) {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method !== "PUT") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const data = await readJsonBody(req),
+        assignments = Array.isArray(data.assignments) ? data.assignments : [];
+      if (assignments.length > 100 || assignments.some((item) =>
+        !/^[0-9a-f-]{36}$/.test(String(item.classId || "")) ||
+        !/^[0-9a-f-]{36}$/.test(String(item.subjectId || "")))) {
+        json(res, 400, { error: "Choose valid class and subject assignments." });
+        return;
+      }
+      const unique = [...new Map(assignments.map((item) =>
+        [`${item.classId}:${item.subjectId}`, item])).values()];
+      const saved = await transaction(async (client) => {
+        const staff = (await client.query(
+          `SELECT id,full_name FROM staff_invitations
+           WHERE id=$1 AND school_id=$2 AND role='teacher' AND invitation_status<>'revoked' FOR UPDATE`,
+          [staffAssignmentsRoute[1], context.school_id],
+        )).rows[0];
+        if (!staff) throw Object.assign(new Error("Teacher not found."), { status: 404 });
+        if (unique.length) {
+          const classIds = unique.map((item) => String(item.classId)),
+            subjectIds = unique.map((item) => String(item.subjectId));
+          const valid = await client.query(
+            `SELECT
+              (SELECT count(*) FROM classes WHERE school_id=$1 AND id=ANY($2::uuid[]))::int AS classes,
+              (SELECT count(*) FROM subjects WHERE school_id=$1 AND id=ANY($3::uuid[]))::int AS subjects`,
+            [context.school_id, [...new Set(classIds)], [...new Set(subjectIds)]],
+          );
+          if (valid.rows[0].classes !== new Set(classIds).size ||
+              valid.rows[0].subjects !== new Set(subjectIds).size)
+            throw Object.assign(new Error("An assignment does not belong to this school."), { status: 400 });
+        }
+        await client.query(
+          `DELETE FROM teacher_assignments WHERE school_id=$1 AND staff_invitation_id=$2`,
+          [context.school_id, staff.id],
+        );
+        for (const item of unique)
+          await client.query(
+            `INSERT INTO teacher_assignments(school_id,staff_invitation_id,class_id,subject_id)
+             VALUES($1,$2,$3,$4)`,
+            [context.school_id, staff.id, item.classId, item.subjectId],
+          );
+        return { staff, count: unique.length };
+      });
+      await recordAudit(context,"teacher.assignments.updated","staff",saved.staff.id,
+        { teacher: saved.staff.full_name, count: saved.count });
+      json(res, 200, { status: "saved", count: saved.count });
       return;
     }
     const staffResendRoute = pathname.match(
@@ -2385,6 +2489,7 @@ const server = http.createServer(async (req, res) => {
           json(res, 400, { error: "Choose a valid class and date." });
           return;
         }
+        await requireTeacherAssignment(context, className);
         const result = await query(
           `SELECT st.id AS student_id,a.status,a.recorded_at
            FROM students st JOIN classes c ON c.id=st.class_id
@@ -2413,6 +2518,7 @@ const server = http.createServer(async (req, res) => {
           json(res, 400, { error: "Choose a valid class and date." });
           return;
         }
+        await requireTeacherAssignment(context, selectedClass);
         const allowedStatuses = new Set([
           "present",
           "late",
@@ -2473,6 +2579,7 @@ const server = http.createServer(async (req, res) => {
           json(res, 400, { error: "Choose a class." });
           return;
         }
+        await requireTeacherAssignment(context, className);
         const entries = await query(
           `SELECT te.id,te.weekday,to_char(te.start_time,'HH24:MI') AS start_time,
              to_char(te.end_time,'HH24:MI') AS end_time,te.teacher_name,
@@ -2619,6 +2726,7 @@ const server = http.createServer(async (req, res) => {
           json(res, 400, { error: "Choose a valid class, subject and term." });
           return;
         }
+        await requireTeacherAssignment(context, className, subjectName);
         const assessment = (
           await query(
             `SELECT a.id,a.title,a.academic_year,a.term,a.maximum_score,a.published_at,a.grade_scale,a.pass_mark_snapshot,COALESCE(su.name,'General') AS subject_name,
@@ -2660,6 +2768,7 @@ const server = http.createServer(async (req, res) => {
           json(res, 400, { error: "Enter a result for every student." });
           return;
         }
+        await requireTeacherAssignment(context, className, subjectName);
         const result = await transaction(async (client) => {
           const schoolClass = (
             await client.query(
@@ -2788,6 +2897,7 @@ const server = http.createServer(async (req, res) => {
         json(res, 400, { error: "Choose a valid class and term." });
         return;
       }
+      await requireTeacherAssignment(context, className);
       const students = await query(
           `SELECT st.id,st.student_number,st.full_name
            FROM students st JOIN classes c ON c.id=st.class_id

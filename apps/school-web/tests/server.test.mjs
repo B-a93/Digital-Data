@@ -193,6 +193,21 @@ test('schools can save branding for official printable documents',async()=>{
  assert.match(app,/Payment receipt ·/);
  assert.match(app,/Payment Status Report ·/);
 });
+test('teachers are restricted to assigned class and subject pairs',async()=>{
+ const [schema,server,app]=await Promise.all([
+  readFile('apps/school-web/database/schema.sql','utf8'),
+  readFile('apps/school-web/server.mjs','utf8'),
+  readFile('apps/school-web/public/app.js','utf8'),
+ ]);
+ assert.match(schema,/CREATE TABLE IF NOT EXISTS teacher_assignments/);
+ assert.match(schema,/UNIQUE \(staff_invitation_id, class_id, subject_id\)/);
+ assert.match(server,/function requireTeacherAssignment/);
+ assert.match(server,/teacher\.assignments\.updated/);
+ assert.match(server,/staffAssignmentsRoute/);
+ assert.match(app,/Teacher assignments/);
+ assert.match(app,/The teacher will only access assigned classes and subjects/);
+ assert.match(app,/saveTeacherAssignments/);
+});
 test('self-onboarding creates an invited workspace and starts trials only after activation',async()=>{
  const [server,schema,onboarding]=await Promise.all([
   readFile('apps/school-web/server.mjs','utf8'),

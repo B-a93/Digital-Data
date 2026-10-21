@@ -184,6 +184,18 @@ CREATE TABLE IF NOT EXISTS subjects (
   UNIQUE (school_id, name)
 );
 
+CREATE TABLE IF NOT EXISTS teacher_assignments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  staff_invitation_id uuid NOT NULL REFERENCES staff_invitations(id) ON DELETE CASCADE,
+  class_id uuid NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  subject_id uuid NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (staff_invitation_id, class_id, subject_id)
+);
+CREATE INDEX IF NOT EXISTS teacher_assignments_school_staff_idx
+  ON teacher_assignments(school_id, staff_invitation_id);
+
 CREATE TABLE IF NOT EXISTS programmes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,

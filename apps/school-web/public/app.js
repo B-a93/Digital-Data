@@ -123,6 +123,7 @@ let view = "dashboard",
   schoolClassIds = new Map(),
   schoolFeeTypeIds = new Map(),
   schoolSubjectIds = new Map(),
+  teacherAssignments = [],
   platformSchools = [],
   schoolStaff = [],
   schoolActivity = [],
@@ -159,8 +160,12 @@ const money = (n) =>
     maximumFractionDigits: 2,
   });
 const schoolClasses = () => state.settings.classes;
-const schoolSubjects = () =>
-  state.settings.subjects.length ? state.settings.subjects : ["General"];
+const schoolSubjects = (className = selectedClass) => {
+  const assigned = role === "Teacher"
+    ? teacherAssignments.filter((item) => item.class_name === className).map((item) => item.subject_name)
+    : state.settings.subjects;
+  return assigned.length ? assigned : ["General"];
+};
 const gradeBands = (scale = state.settings.gradeScale, passMark = state.settings.pass) =>
   Array.isArray(scale?.bands) && scale.bands.length
     ? scale.bands
@@ -579,8 +584,7 @@ async function loadSchoolStudents() {
   schoolSubjectIds = new Map(data.subjects.map((item) => [item.name, item.id]));
   state.settings.classes = data.classes.map((item) => item.name);
   state.settings.subjects = data.subjects.map((item) => item.name);
-  if (!schoolSubjects().includes(selectedSubject))
-    selectedSubject = schoolSubjects()[0];
+  teacherAssignments = data.assignments || [];
   state.students = data.students.map((student) => ({
     id: student.id,
     admission: student.student_number,
@@ -600,6 +604,8 @@ async function loadSchoolStudents() {
   state.remarks = {};
   state.published = [];
   selectedClass = state.settings.classes[0];
+  if (!schoolSubjects(selectedClass).includes(selectedSubject))
+    selectedSubject = schoolSubjects(selectedClass)[0];
   if (!schoolClasses().includes(promotionFrom))
     promotionFrom = schoolClasses()[0];
   if (!schoolClasses().includes(promotionTo) || promotionTo === promotionFrom)
@@ -1838,12 +1844,21 @@ function activity() {
   );
 }
 function staff() {
+  const teachers = schoolStaff.filter((member) => member.role === "teacher"),
+    assignmentPanels = teachers.map((member) => {
+      const assigned = member.assignments || [],
+        classOptions = [...schoolClassIds.entries()].map(([name,id]) =>
+          `<option value="${esc(id)}">${esc(name)}</option>`).join(""),
+        subjectOptions = [...schoolSubjectIds.entries()].map(([name,id]) =>
+          `<option value="${esc(id)}">${esc(name)}</option>`).join("");
+      return `<section class="panel teacher-assignment-card"><div class="panel-heading"><div><h2>${esc(member.full_name)}</h2><p>${esc(member.email)}</p></div><span class="badge ${assigned.length ? "" : "amber"}">${assigned.length} assignment${assigned.length === 1 ? "" : "s"}</span></div><form class="teacher-assignment-form" data-id="${esc(member.id)}"><div class="form-grid"><div class="field"><label>Class</label><select name="classId" required>${classOptions}</select></div><div class="field"><label>Subject</label><select name="subjectId" required>${subjectOptions}</select></div></div><div class="form-actions"><button class="button secondary" ${classOptions && subjectOptions ? "" : "disabled"}>Add assignment</button><span class="status-text">The teacher will only access assigned classes and subjects.</span></div></form>${table(["Class","Subject","Action"],assigned.map((item,index) => `<tr><td>${esc(item.className)}</td><td>${esc(item.subjectName)}</td><td><button class="text-button remove-teacher-assignment" data-staff="${esc(member.id)}" data-index="${index}">Remove</button></td></tr>`).join(""))}</section>`;
+    }).join("");
   return (
     heading(
       "Staff management",
       "Invite teachers and finance staff to this school workspace.",
     ) +
-    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>Invite a staff member</h2><span class="badge gray">Administrator only</span></div><form id="staff-form"><div class="form-grid"><div class="field"><label for="staff-name">Full name</label><input id="staff-name" name="fullName" maxlength="100" required></div><div class="field"><label for="staff-email">Email address</label><input id="staff-email" name="email" type="email" required></div><div class="field"><label for="staff-role">Role</label><select id="staff-role" name="role"><option value="teacher">Teacher</option><option value="finance">Finance</option></select></div></div><div class="form-actions"><button class="button">Send invitation</button><span class="status-text">Personal email addresses can be used.</span></div><div id="staff-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Staff access</h2><small>${schoolStaff.length} staff</small></div>${table(["Staff member", "Role", "Status", "Invited", "Actions"], schoolStaff.map((member) => `<tr><td><span class="student-name">${esc(member.full_name)}</span><span class="sub">${esc(member.email)}</span></td><td><select class="staff-role-select" data-id="${esc(member.id)}" aria-label="Role for ${esc(member.full_name)}"><option value="teacher" ${member.role === "teacher" ? "selected" : ""}>Teacher</option><option value="finance" ${member.role === "finance" ? "selected" : ""}>Finance</option></select></td><td><span class="badge ${member.invitation_status === "accepted" ? "" : "amber"}">${esc(member.invitation_status)}</span></td><td>${esc(new Date(member.invited_at).toLocaleDateString("en-GB"))}</td><td><div class="quick-actions">${member.invitation_status !== "accepted" ? `<button class="text-button resend-staff" data-id="${esc(member.id)}">Resend</button>` : ""}<button class="text-button revoke-staff" data-id="${esc(member.id)}" data-name="${esc(member.full_name)}">${member.invitation_status === "accepted" ? "Deactivate" : "Cancel"}</button></div></td></tr>`).join(""))}</section></div>`
+    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>Invite a staff member</h2><span class="badge gray">Administrator only</span></div><form id="staff-form"><div class="form-grid"><div class="field"><label for="staff-name">Full name</label><input id="staff-name" name="fullName" maxlength="100" required></div><div class="field"><label for="staff-email">Email address</label><input id="staff-email" name="email" type="email" required></div><div class="field"><label for="staff-role">Role</label><select id="staff-role" name="role"><option value="teacher">Teacher</option><option value="finance">Finance</option></select></div></div><div class="form-actions"><button class="button">Send invitation</button><span class="status-text">Personal email addresses can be used.</span></div><div id="staff-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Staff access</h2><small>${schoolStaff.length} staff</small></div>${table(["Staff member", "Role", "Status", "Invited", "Actions"], schoolStaff.map((member) => `<tr><td><span class="student-name">${esc(member.full_name)}</span><span class="sub">${esc(member.email)}</span></td><td><select class="staff-role-select" data-id="${esc(member.id)}" aria-label="Role for ${esc(member.full_name)}"><option value="teacher" ${member.role === "teacher" ? "selected" : ""}>Teacher</option><option value="finance" ${member.role === "finance" ? "selected" : ""}>Finance</option></select></td><td><span class="badge ${member.invitation_status === "accepted" ? "" : "amber"}">${esc(member.invitation_status)}</span></td><td>${esc(new Date(member.invited_at).toLocaleDateString("en-GB"))}</td><td><div class="quick-actions">${member.invitation_status !== "accepted" ? `<button class="text-button resend-staff" data-id="${esc(member.id)}">Resend</button>` : ""}<button class="text-button revoke-staff" data-id="${esc(member.id)}" data-name="${esc(member.full_name)}">${member.invitation_status === "accepted" ? "Deactivate" : "Cancel"}</button></div></td></tr>`).join(""))}</section><div class="panel-heading"><div><h2>Teacher assignments</h2><p>Connect each teacher to the exact classes and subjects they teach.</p></div></div>${assignmentPanels || '<section class="panel"><p class="empty">Invite a teacher before creating assignments.</p></section>'}</div>`
   );
 }
 function gradingBandRow(band = { label: "", min: 0, passing: true }) {
@@ -2830,6 +2845,8 @@ function wire() {
     };
     $("#res-class").onchange = async (e) => {
       selectedClass = e.target.value;
+      if (!schoolSubjects(selectedClass).includes(selectedSubject))
+        selectedSubject = schoolSubjects(selectedClass)[0];
       if (schoolDataLive)
         try {
           await loadSchoolResults(
@@ -3507,6 +3524,14 @@ function wire() {
     );
   }
   if (view === "staff") {
+    const saveTeacherAssignments = async (staffId, assignments) => {
+      await schoolApi(`/api/school/staff/${staffId}/assignments`, {
+        method: "PUT",
+        body: JSON.stringify({ assignments }),
+      });
+      await loadSchoolStaff();
+      render();
+    };
     $("#staff-form").onsubmit = async (e) => {
       e.preventDefault();
       const button = e.target.querySelector(".button");
@@ -3576,6 +3601,30 @@ function wire() {
             toast(err.message);
           }
         }),
+    );
+    document.querySelectorAll(".teacher-assignment-form").forEach((form) =>
+      (form.onsubmit = async (event) => {
+        event.preventDefault();
+        const member = schoolStaff.find((item) => item.id === form.dataset.id),
+          data = new FormData(form),
+          next = [...(member?.assignments || []), {
+            classId: data.get("classId"), subjectId: data.get("subjectId"),
+          }];
+        try {
+          await saveTeacherAssignments(form.dataset.id, next);
+          toast("Teacher assignment saved.");
+        } catch (err) { toast(err.message); }
+      }),
+    );
+    document.querySelectorAll(".remove-teacher-assignment").forEach((button) =>
+      (button.onclick = async () => {
+        const member = schoolStaff.find((item) => item.id === button.dataset.staff),
+          next = (member?.assignments || []).filter((_, index) => index !== Number(button.dataset.index));
+        try {
+          await saveTeacherAssignments(button.dataset.staff, next);
+          toast("Teacher assignment removed.");
+        } catch (err) { toast(err.message); }
+      }),
     );
   }
   if (view === "activity") {
