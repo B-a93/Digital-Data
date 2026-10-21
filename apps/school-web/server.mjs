@@ -39,11 +39,11 @@ const json = (res, status, data) => {
   res.end(JSON.stringify(data));
 };
 const onboardingAttempts = new Map();
-async function readJsonBody(req) {
+async function readJsonBody(req, maxLength = 200000) {
   let value = "";
   for await (const chunk of req) {
     value += chunk;
-    if (value.length > 200000)
+    if (value.length > maxLength)
       throw Object.assign(new Error("Request too large"), { status: 413 });
   }
   return JSON.parse(value || "{}");
@@ -1524,7 +1524,7 @@ const server = http.createServer(async (req, res) => {
         json(res, 405, { error: "Method not allowed" });
         return;
       }
-      const data = await readJsonBody(req),
+      const data = await readJsonBody(req, 500000),
         name = String(data.name || "").trim(),
         term = String(data.term || "").trim(),
         address = String(data.address || "").trim(),
