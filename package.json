@@ -12,11 +12,25 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@neondatabase/auth": "^0.5.0-beta",
-    "@neondatabase/neon-js": "^0.7.0-beta",
+    "@neondatabase/auth": "0.7.0-beta",
     "esbuild": "^0.28.2",
     "jose": "^6.2.5",
-    "nodemailer": "^10.0.10",
+    "nodemailer": "^10.2.1",
     "pg": "^8.16.3"
+  },
+  "overrides": {
+    "better-auth": "1.7.14",
+    "zod": "4.6.7",
+    "@better-auth/core": "1.7.14",
+    "@better-auth/drizzle-adapter": "1.7.14",
+    "@better-auth/kysely-adapter": "1.7.14",
+    "@better-auth/memory-adapter": "1.7.14",
+    "@better-auth/mongo-adapter": "1.7.14",
+    "@better-auth/prisma-adapter": "1.7.14",
+    "@better-auth/passkey": "1.7.14",
+    "@better-auth/api-key": "1.7.14",
+    "@better-auth/telemetry": "1.7.14",
+    "@better-auth/oauth-provider": "1.7.14",
+    "better-call": "1.4.4"
   }
 }
