@@ -125,7 +125,7 @@ test('dashboard action centre prioritises operational work by staff role',async(
  assert.match(app,/Guardian follow-ups due/);
  assert.match(app,/Attendance incomplete/);
  assert.match(app,/Admissions awaiting review/);
- assert.match(app,/Overdue student balances/);
+ assert.match(app,/Outstanding student balances/);
  assert.match(app,/role === "Administrator" \|\| role === "Finance"/);
  assert.match(style,/\.action-centre/);
  assert.match(style,/\.action-item\.urgent/);
@@ -351,3 +351,36 @@ test('onboarding displays a clear validation error instead of silently stopping'
  assert.match(script,/scrollIntoView/);
 });
 
+
+test('daily priorities use all loaded classes, positive balances and role permissions', async () => {
+ const {runInNewContext} = await import('node:vm');
+ const source = await readFile('apps/school-web/public/app.js','utf8');
+ const start = source.indexOf('const attentionAttendanceLoaded = new Set();');
+ const end = source.indexOf('function printStudentIdCards()', start);
+ const context = {
+  schoolDataLive:true, role:'Administrator', localDate:()=> '2026-10-28',
+  schoolClasses:()=>['A','B'], activeStudents:()=>context.state.students,
+  state:{students:[{id:'1',class:'A'},{id:'2',class:'B'},{id:'3',class:'B'}],attendance:{'2026-10-28':{marks:{'1':'present','3':'excused'}}}},
+  guardianFollowUps:[{status:'open',follow_up_on:'2026-10-28'},{status:'completed',follow_up_on:'2026-10-27'},{status:'open',follow_up_on:'2026-10-29'}],
+  admissionApplications:[{status:'pending'}], studentDataQuality:()=>({missing:[{}]}),
+  balance:(_,id)=>id==='2'?500:id==='3'?-100:0, money:n=>`D${n/100}`,esc:s=>String(s),
+  loadSchoolAttendance:async()=>{}
+ };
+ runInNewContext(source.slice(start,end),context);
+ await context.loadAttentionAttendance();
+ let html=context.operationsActionCentre();
+ assert.match(html,/Needs your attention today/);
+ assert.match(html,/Attendance incomplete for B/);
+ assert.doesNotMatch(html,/Attendance incomplete for A/);
+ assert.match(html,/D5 outstanding across 1 students/);
+ assert.match(html,/1 open follow-ups/);
+ assert.match(html,/data-attention-class="B"/);
+ context.role='Teacher'; html=context.operationsActionCentre();
+ assert.doesNotMatch(html,/Outstanding student balances|Admissions awaiting review|Student records need information/);
+ context.role='Finance'; html=context.operationsActionCentre();
+ assert.match(html,/Outstanding student balances/);
+ assert.doesNotMatch(html,/Attendance incomplete|Admissions awaiting review/);
+ context.role='Administrator'; context.localDate=()=> '2026-10-29';
+ assert.match(context.operationsActionCentre(),/Today’s attendance has not been checked/);
+ context.schoolDataLive=false; assert.equal(context.operationsActionCentre(),'');
+});
