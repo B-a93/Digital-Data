@@ -21,15 +21,15 @@
     <main class="onboarding-main">
       <section class="onboarding-intro">
         <span class="eyebrow">STUDENT ADMISSIONS</span>
-        <h1>Apply to a participating school.</h1>
-        <p>Enter the school code supplied by the school. Submitting this form does not guarantee admission; the school must review and approve it.</p>
-        <div class="onboarding-note"><strong>Before you begin</strong><span>Have the learner’s details and a parent or guardian’s contact information ready. Contact the school if you do not know its code.</span></div>
+        <h1 id="admission-school-title">Apply to a participating school.</h1>
+        <p id="admission-introduction">Enter the school code supplied by the school. Submitting this form does not guarantee admission; the school must review and approve it.</p>
+        <div class="onboarding-note"><strong>Before you begin</strong><span id="admission-help">Have the learner’s details and a parent or guardian’s contact information ready. Contact the school if you do not know its code.</span></div>
       </section>
       <section class="onboarding-card" aria-labelledby="admission-title">
         <h2 id="admission-title">Student registration application</h2>
         <form id="admission-form" novalidate>
           <div class="form-grid">
-            <div class="field"><label for="school-code">School code *</label><input id="school-code" name="schoolCode" pattern="[a-z0-9-]{3,60}" maxlength="60" required placeholder="e.g. example-school" /></div>
+            <div class="field" id="school-code-field"><label for="school-code">School code *</label><input id="school-code" name="schoolCode" pattern="[a-z0-9-]{3,60}" maxlength="60" required placeholder="e.g. example-school" /></div>
             <div class="field"><label for="full-name">Student full name *</label><input id="full-name" name="fullName" maxlength="120" required autocomplete="name" /></div>
             <div class="field"><label for="date-of-birth">Date of birth</label><input id="date-of-birth" name="dateOfBirth" type="date" /></div>
             <div class="field"><label for="gender">Gender</label><select id="gender" name="gender"><option value="">Prefer not to say</option><option>Female</option><option>Male</option><option>Other</option></select></div>
