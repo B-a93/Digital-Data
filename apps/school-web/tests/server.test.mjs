@@ -384,3 +384,36 @@ test('daily priorities use all loaded classes, positive balances and role permis
  assert.match(context.operationsActionCentre(),/Today’s attendance has not been checked/);
  context.schoolDataLive=false; assert.equal(context.operationsActionCentre(),'');
 });
+
+test('school-specific admission links verify the school and retain it after submission', async()=>{
+ const {runInNewContext}=await import('node:vm');
+ const source=await readFile('apps/school-web/public/admissions.js','utf8');
+ const nodes=new Map(),calls=[];
+ const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',textContent:'',hidden:false,disabled:false});return nodes.get(id);};
+ const form=node('#admission-form'),button=node('button');
+ form.querySelector=()=>button;form.classList={add(){},remove(){}};form.checkValidity=()=>true;
+ form.reset=()=>{node('#school-code').value='';};form.addEventListener=(_,fn)=>{form.submit=fn;};
+ const context={document:{querySelector:node,title:''},location:{search:'?school=example-academy'},URLSearchParams,
+ FormData:class{*[Symbol.iterator](){yield ['schoolCode','tampered-school'];yield ['fullName','Sample learner'];}},
+ fetch:async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>options?{message:'Application submitted.',application:{id:'sample-reference'}}:{school:{name:'Example Academy',code:'example-academy'}}};}};
+ runInNewContext(source,context);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(node('#admission-school-title').textContent,'Apply to Example Academy');
+ assert.equal(node('#school-code-field').hidden,true);assert.equal(button.disabled,false);
+ await form.submit({preventDefault(){}});
+ assert.equal(JSON.parse(calls[1].options.body).schoolCode,'example-academy');
+ assert.equal(node('#school-code').value,'example-academy');
+ assert.match(node('#admission-message').textContent,/sample-reference/);
+});
+test('invalid admission links cannot submit and the generic form remains usable',async()=>{
+ const {runInNewContext}=await import('node:vm');
+ const source=await readFile('apps/school-web/public/admissions.js','utf8');
+ for(const search of ['?school=missing-school','']){
+  const nodes=new Map();const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',disabled:false});return nodes.get(id);};
+  const form=node('#admission-form'),button=node('button');let calls=0;
+  form.querySelector=()=>button;form.addEventListener=(_,fn)=>{form.submit=fn;};
+  runInNewContext(source,{document:{querySelector:node},location:{search},URLSearchParams,fetch:async()=>{calls++;return {ok:false,json:async()=>({error:'School unavailable'})};}});
+  await new Promise(resolve=>setImmediate(resolve));
+  if(search){assert.equal(button.disabled,true);await form.submit({preventDefault(){}});assert.equal(calls,1);assert.match(node('#admission-message').textContent,/School unavailable/);}
+  else{assert.equal(calls,0);assert.equal(button.disabled,false);}
+ }
+});
