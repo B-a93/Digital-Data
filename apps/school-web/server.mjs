@@ -401,6 +401,26 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
+    if (pathname === "/api/admission-school") {
+      if (req.method !== "GET") {
+        json(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      const schoolCode = String(requestUrl.searchParams.get("school") || "").trim().toLowerCase();
+      if (!/^[a-z0-9-]{3,60}$/.test(schoolCode)) {
+        json(res, 400, { error: "This admission link is invalid. Ask the school for a new link." });
+        return;
+      }
+      const school = (await query(
+        `SELECT name,slug FROM schools WHERE slug=$1 AND status='active'`, [schoolCode],
+      )).rows[0];
+      if (!school) {
+        json(res, 404, { error: "This school is not currently accepting applications through this link. Contact the school." });
+        return;
+      }
+      json(res, 200, { school: { name: school.name, code: school.slug } });
+      return;
+    }
     if (pathname === "/api/admissions") {
       if (req.method !== "POST") {
         json(res, 405, { error: "Method not allowed" });
