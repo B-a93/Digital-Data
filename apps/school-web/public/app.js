@@ -916,17 +916,32 @@ function dashboard() {
       )}</div><p class="note">Demo view changes these shortcuts only. It does not enforce permissions.</p></section></div>`
   );
 }
+const attentionAttendanceLoaded = new Set();
+async function loadAttentionAttendance() {
+  if (!schoolDataLive || !["Administrator", "Teacher"].includes(role)) return;
+  const today = localDate();
+  for (const className of schoolClasses()) {
+    await loadSchoolAttendance(today, className);
+    attentionAttendanceLoaded.add(JSON.stringify([today, className]));
+  }
+}
 function operationsActionCentre() {
   if (!schoolDataLive) return "";
   const today = localDate(), actions = [],
     dueFollowUps = guardianFollowUps.filter((item) => item.status === "open" && item.follow_up_on && String(item.follow_up_on).slice(0,10) <= today).length,
-    classStudents = activeStudents().filter((student) => student.class === selectedClass),
-    classMarks = state.attendance[today]?.marks || {},
-    unmarked = classStudents.filter((student) => !classMarks[student.id] || classMarks[student.id] === "unmarked").length;
+    todayMarks = state.attendance[today]?.marks || {};
   if (dueFollowUps)
-    actions.push(["communications",dueFollowUps,"Guardian follow-ups due",`${dueFollowUps} open follow-up${dueFollowUps === 1 ? "" : "s"} require attention today or are overdue.`,"urgent"]);
-  if ((role === "Administrator" || role === "Teacher") && unmarked)
-    actions.push(["attendance",unmarked,`Attendance incomplete for ${selectedClass}`,`${unmarked} active student${unmarked === 1 ? "" : "s"} still unmarked for today.`,"urgent"]);
+    actions.push(["communications",dueFollowUps,"Guardian follow-ups due",`${dueFollowUps} open follow-ups are due today or overdue.`,"urgent"]);
+  if (role === "Administrator" || role === "Teacher") {
+    for (const className of schoolClasses()) {
+      if (!attentionAttendanceLoaded.has(JSON.stringify([today, className]))) {
+        actions.push(["attendance","—",`Check attendance for ${className}`,"Today’s attendance has not been checked. Open the register to review it.","normal",className]);
+        continue;
+      }
+      const unmarked = activeStudents().filter((student) => student.class === className && (!todayMarks[student.id] || todayMarks[student.id] === "unmarked")).length;
+      if (unmarked) actions.push(["attendance",unmarked,`Attendance incomplete for ${className}`,`${unmarked} active students still unmarked for today.`,"urgent",className]);
+    }
+  }
   if (role === "Administrator") {
     const pending = admissionApplications.filter((item) => item.status === "pending").length,
       incomplete = studentDataQuality().missing.length;
@@ -934,11 +949,11 @@ function operationsActionCentre() {
     if (incomplete) actions.push(["students",incomplete,"Student records need information",`${incomplete} record${incomplete === 1 ? "" : "s"} are missing important identity or guardian details.`,"normal"]);
   }
   if (role === "Administrator" || role === "Finance") {
-    const overdueStudents = new Set(state.charges.filter((charge) => charge.dueDate && charge.dueDate < today && balance(state,charge.studentId) > 0).map((charge) => charge.studentId));
-    if (overdueStudents.size)
-      actions.push(["fees",overdueStudents.size,"Overdue student balances",`${overdueStudents.size} student${overdueStudents.size === 1 ? "" : "s"} have unpaid charges past their due date.`,"urgent"]);
+    const owing = state.students.filter((student) => balance(state,student.id) > 0);
+    if (owing.length)
+      actions.push(["fees",owing.length,"Outstanding student balances",`${money(owing.reduce((total, student) => total + balance(state,student.id), 0))} outstanding across ${owing.length} students. Review balances and payment history before following up.`,"normal"]);
   }
-  return `<section class="action-centre" aria-labelledby="action-centre-title"><div class="panel-heading"><div><span class="eyebrow">PRIORITIES</span><h2 id="action-centre-title">Operations action centre</h2><p>${actions.length ? "Work that needs attention now, based on your access." : "No urgent actions are currently waiting."}</p></div><span class="badge ${actions.some((item) => item[4] === "urgent") ? "amber" : "gray"}">${actions.length} action${actions.length === 1 ? "" : "s"}</span></div>${actions.length ? `<div class="action-list">${actions.map(([page,count,title,description,priority]) => `<a href="#${page}" class="action-item ${priority}"><span class="action-count">${count}</span><span><strong>${esc(title)}</strong><small>${esc(description)}</small></span><span class="action-open">Open →</span></a>`).join("")}</div>` : '<div class="action-clear"><span aria-hidden="true">✓</span><strong>You’re up to date</strong><small>New priorities will appear here automatically.</small></div>'}</section>`;
+  return `<section class="action-centre" aria-labelledby="action-centre-title"><div class="panel-heading"><div><span class="eyebrow">Operations action centre</span><h2 id="action-centre-title">Needs your attention today</h2><p>${actions.length ? `Based on saved records · ${today} · your permitted classes and tasks.` : `No pending items in the records checked for ${today}.`}</p></div><span class="badge ${actions.some((item) => item[4] === "urgent") ? "amber" : "gray"}">${actions.length} task group${actions.length === 1 ? "" : "s"}</span><button class="button secondary" id="refresh-attention">Refresh priorities</button></div>${actions.length ? `<div class="action-list">${actions.map(([page,count,title,description,priority,className]) => `<a ${className ? `data-attention-class="${esc(className)}"` : ""} href="#${page}" class="action-item ${priority}"><span class="action-count">${count}</span><span><strong>${esc(title)}</strong><small>${esc(description)}</small></span><span class="action-open">Open →</span></a>`).join("")}</div>` : '<div class="action-clear"><span aria-hidden="true">✓</span><strong>You’re up to date</strong><small>Refresh priorities to check for updates from your team.</small></div>'}</section>`;
 }
 function printStudentIdCards() {
   const students = activeStudents().filter(
@@ -1904,6 +1919,35 @@ function settings() {
   );
 }
 function wire() {
+  const refreshAttention = $("#refresh-attention");
+  if (refreshAttention) refreshAttention.onclick = async () => {
+    refreshAttention.disabled = true;
+    refreshAttention.textContent = "Refreshing…";
+    try {
+      await loadSchoolStudents();
+      await loadGuardianFollowUps();
+      if (role !== "Teacher") await loadSchoolFinance();
+      if (role === "Administrator") await loadAdmissions();
+      attentionAttendanceLoaded.clear();
+      await loadAttentionAttendance();
+      render();
+    } catch (error) {
+      render();
+      toast(`Could not refresh all priorities: ${error.message}`);
+    }
+  };
+  document.querySelectorAll("[data-attention-class]").forEach((link) => {
+    link.onclick = async (event) => {
+      event.preventDefault();
+      selectedClass = link.dataset.attentionClass;
+      selectedDate = localDate();
+      try {
+        await loadSchoolAttendance(selectedDate, selectedClass);
+        attentionAttendanceLoaded.add(JSON.stringify([selectedDate, selectedClass]));
+        navigate("attendance");
+      } catch (error) { toast(error.message); }
+    };
+  });
   document.querySelectorAll("[data-nav]").forEach(
     (a) =>
       (a.onclick = (e) => {
@@ -3947,7 +3991,7 @@ async function showPortal(session) {
       state.payments = [];
     }
     if (role === "Administrator" || role === "Teacher") {
-      await loadSchoolAttendance();
+      await loadAttentionAttendance();
       await loadResultTerms();
       await loadSchoolResults();
       await loadTimetable();
