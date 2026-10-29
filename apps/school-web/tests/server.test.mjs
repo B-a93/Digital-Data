@@ -13,6 +13,9 @@ test('server serves prototype and rejects missing files',async()=>{
   assert.equal(health.status,503);
   assert.deepEqual(await health.json(),{status:'degraded',database:{ok:false,configured:false,error:'DATABASE_URL is not configured'}});
   assert.equal((await fetch('http://127.0.0.1:3107/domain.js')).status,200);
+  const logo=await fetch('http://127.0.0.1:3107/school-logo-header.webp');
+  assert.equal(logo.status,200);assert.equal(logo.headers.get('content-type'),'image/webp');
+  assert((await logo.arrayBuffer()).byteLength < 65000);
   assert.equal((await fetch('http://127.0.0.1:3107/missing.txt')).status,404);
  } finally {child.kill();}
 });
@@ -355,7 +358,7 @@ test('onboarding displays a clear validation error instead of silently stopping'
 test('daily priorities use all loaded classes, positive balances and role permissions', async () => {
  const {runInNewContext} = await import('node:vm');
  const source = await readFile('apps/school-web/public/app.js','utf8');
- const start = source.indexOf('const attentionAttendanceLoaded = new Set();');
+ const start = source.indexOf('async function runSchoolLoads(');
  const end = source.indexOf('function printStudentIdCards()', start);
  const context = {
   schoolDataLive:true, role:'Administrator', localDate:()=> '2026-10-28',

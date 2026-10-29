@@ -916,14 +916,47 @@ function dashboard() {
       )}</div><p class="note">Demo view changes these shortcuts only. It does not enforce permissions.</p></section></div>`
   );
 }
+// Run independent reads together without flooding the school API. Wait for every
+// started read to settle before reporting an error, so retries cannot race them.
+async function runSchoolLoads(tasks, concurrency = 4) {
+  let next = 0;
+  const errors = [];
+  await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, async () => {
+    while (next < tasks.length) {
+      const index = next++;
+      try { await tasks[index](); }
+      catch (error) { errors.push(error); }
+    }
+  }));
+  if (errors.length) throw errors[0];
+}
+async function loadSchoolWorkspace() {
+  // Student loading initializes classes and clears attendance/results caches.
+  await loadSchoolStudents();
+  const tasks = [loadGuardianFollowUps];
+  if (role === "Administrator" || role === "Finance") tasks.push(loadSchoolFinance);
+  else { state.charges = []; state.payments = []; }
+  if (role === "Administrator" || role === "Teacher") {
+    tasks.push(loadAttentionAttendance, loadTimetable, async () => {
+      // Keep academic-period and result-term dependencies in order.
+      if (role === "Administrator") await loadAcademicPeriods();
+      await loadResultTerms();
+      await loadSchoolResults();
+    });
+  }
+  if (role === "Administrator") {
+    tasks.push(loadSchoolStaff, loadSchoolActivity, loadProgrammes, loadAdmissions);
+  }
+  await runSchoolLoads(tasks);
+}
 const attentionAttendanceLoaded = new Set();
 async function loadAttentionAttendance() {
   if (!schoolDataLive || !["Administrator", "Teacher"].includes(role)) return;
   const today = localDate();
-  for (const className of schoolClasses()) {
+  await runSchoolLoads(schoolClasses().map((className) => async () => {
     await loadSchoolAttendance(today, className);
     attentionAttendanceLoaded.add(JSON.stringify([today, className]));
-  }
+  }), 3);
 }
 function operationsActionCentre() {
   if (!schoolDataLive) return "";
@@ -3996,27 +4029,7 @@ async function showPortal(session) {
       B: 70,
       C: 60,
     };
-    await loadSchoolStudents();
-    await loadGuardianFollowUps();
-    if (role === "Administrator" || role === "Finance")
-      await loadSchoolFinance();
-    else {
-      state.charges = [];
-      state.payments = [];
-    }
-    if (role === "Administrator" || role === "Teacher") {
-      await loadAttentionAttendance();
-      await loadResultTerms();
-      await loadSchoolResults();
-      await loadTimetable();
-    }
-    if (role === "Administrator") {
-      await loadAcademicPeriods();
-      await loadSchoolStaff();
-      await loadSchoolActivity();
-      await loadProgrammes();
-      await loadAdmissions();
-    }
+    await loadSchoolWorkspace();
   }
   const trialActive = activeSchool?.trialStatus === "active";
   $(".demo-banner").hidden = Boolean(activeSchool) && !trialActive;
