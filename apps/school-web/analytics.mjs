@@ -102,3 +102,34 @@ export function summarizeExams(rows) {
   return {marked,passed,unclassified,passRate:marked ? 100*passed/marked : null,support,
     subjects:[...groups.values()].map(g=>({...g,average:g.sum/g.marks,passRate:g.classified ? 100*g.passed/g.classified : null}))};
 }
+
+export function platformSubscriptionState(school, today) {
+  if (['cancelled','pending_deletion','pending','suspended'].includes(school.status)) return school.status;
+  if (school.billing_status === 'suspended') return 'suspended';
+  const date = value => value instanceof Date ? value.toISOString().slice(0,10) : String(value || '').slice(0,10);
+  if (date(school.subscription_paid_until) >= today) return 'paid';
+  if (school.trial_status === 'active' && date(school.trial_ends_at) >= today) return 'trial';
+  return 'uncovered';
+}
+export async function platformAnalytics(query, from, to) {
+  analyticsRange(from,to);
+  const [schools,payments,growth,clock] = await Promise.all([
+    query(`SELECT id,name,status,billing_status,trial_status,trial_ends_at,subscription_paid_until,created_at
+      FROM schools ORDER BY name`),
+    query(`SELECT to_char(paid_on,'YYYY-MM') AS month,COUNT(*)::int AS payment_count,
+      COUNT(DISTINCT school_id)::int AS paying_schools,SUM(amount_bututs) AS amount
+      FROM platform_subscription_payments WHERE paid_on BETWEEN $1::date AND $2::date
+      GROUP BY to_char(paid_on,'YYYY-MM') ORDER BY month`,[from,to]),
+    query(`SELECT to_char(created_at,'YYYY-MM') AS month,COUNT(*)::int AS count
+      FROM schools WHERE created_at >= $1::date AND created_at < $2::date + interval '1 day'
+      GROUP BY to_char(created_at,'YYYY-MM') ORDER BY month`,[from,to]),
+    query(`SELECT CURRENT_DATE::text AS today`),
+  ]);
+  const today=clock.rows[0].today;
+  const states=schools.rows.map(s=>({...s,subscription_state:platformSubscriptionState(s,today)}));
+  const counts=Object.fromEntries(['paid','trial','uncovered','pending','suspended','cancelled','pending_deletion']
+    .map(status=>[status,states.filter(s=>s.subscription_state===status).length]));
+  return {from,to,generatedAt:new Date().toISOString(),today,totalSchools:states.length,
+    activeSchools:states.filter(s=>s.status==='active').length,counts,schools:states,
+    payments:payments.rows,growth:growth.rows};
+}

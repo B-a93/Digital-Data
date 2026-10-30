@@ -264,7 +264,8 @@ const visibleNav = () =>
     ? [
         ["platform", "◆", "School onboarding"],
         ["platform-billing", "◈", "Billing & subscriptions"],
-        ...navItems,
+        ["platform-analytics", "▥", "Platform Analytics"],
+        ...navItems.filter(([id]) => id !== "analytics"),
       ]
     : !schoolDataLive || role === "Administrator"
       ? navItems
@@ -397,8 +398,10 @@ function render() {
     settings,
     platform,
     "platform-billing": platformBillingPage,
+    "platform-analytics": platformAnalyticsPage,
   }[view]();
   wire();
+  if (view === "platform-analytics" && isPlatformOwner) loadPlatformAnalytics();
   if (view === "analytics" && schoolDataLive && role === "Administrator") loadAnalytics();
 }
 function analytics() {
@@ -449,6 +452,47 @@ async function loadAnalytics() {
       <p class="note">Collection rate is the share of all adjusted charges covered by net payments, capped per student so overpayments cannot inflate the rate. No charges means no rate. Outstanding fees are calculated per student after discounts, waivers, refunds and voids. One student’s credit does not reduce another student’s balance. All student statuses are included.</p>`;
   } catch (error) { if (output.isConnected) output.textContent = `Analytics could not load: ${error.message}. Use Update analytics to retry.`; }
   finally { button.disabled = false; }
+}
+function platformAnalyticsPage() {
+  const today=localDate();
+  return heading("Platform Analytics", "Your school management business at a glance.") + `
+    <section class="panel"><form id="platform-analytics-filter" class="analytics-filter">
+      <label>From <input type="date" name="from" value="${today.slice(0,4)}-01-01" required></label>
+      <label>To <input type="date" name="to" value="${today}" required></label>
+      <button class="button">Update analytics</button></form>
+      <p class="note">Dates filter school registrations and subscription payments. School and subscription statuses show the current position.</p>
+    </section><div id="platform-analytics-output" aria-live="polite">Loading platform analytics…</div>`;
+}
+async function loadPlatformAnalytics() {
+  if(!isPlatformOwner) return;
+  const form=$("#platform-analytics-filter"),output=$("#platform-analytics-output");
+  if(!form || !output) return;
+  const button=form.querySelector("button"); button.disabled=true;
+  output.textContent="Loading platform analytics…";
+  try {
+    const data=await platformApi(`/api/platform/analytics?${new URLSearchParams(new FormData(form))}`);
+    if(!output.isConnected) return;
+    const labels={paid:"Paid subscription",trial:"Free trial",uncovered:"No current paid or trial coverage",
+      pending:"Pending onboarding",suspended:"Suspended",cancelled:"Cancelled",pending_deletion:"Data retention"};
+    const income=data.payments.reduce((sum,row)=>sum+Number(row.amount),0);
+    const newSchools=data.growth.reduce((sum,row)=>sum+Number(row.count),0);
+    const cards=[["Registered schools",data.totalSchools],["Active schools",data.activeSchools],
+      ["Active trials",data.counts.trial],["Paid subscriptions",data.counts.paid],
+      ["No current coverage",data.counts.uncovered],["New registrations in range",newSchools],
+      ["Subscription income in range",money(income)]];
+    const months=new Map();
+    for(const row of data.growth) months.set(row.month,{registrations:Number(row.count),amount:0,count:0});
+    for(const row of data.payments) {
+      if(!months.has(row.month)) months.set(row.month,{registrations:0,amount:0,count:0});
+      Object.assign(months.get(row.month),{amount:Number(row.amount),count:Number(row.payment_count)});
+    }
+    output.innerHTML=`<p class="note">${esc(data.from)} to ${esc(data.to)} · Updated ${esc(new Date(data.generatedAt).toLocaleString())}</p>
+      <div class="analytics-cards">${cards.map(([label,value])=>`<section class="panel"><p>${esc(label)}</p><strong>${esc(value)}</strong></section>`).join("")}</div>
+      <section class="panel"><h2>School growth and subscription income</h2><p class="note">Payments recorded for your platform, not student fee payments. Includes every payment in the range. Months without activity are omitted. Income is cash recorded, not profit or recurring revenue.</p>${table(["Month","New schools","Payments","Income"],[...months].sort(([a],[b])=>a.localeCompare(b)).map(([month,row])=>`<tr><td>${esc(month)}</td><td>${row.registrations}</td><td>${row.count}</td><td>${money(row.amount)}</td></tr>`).join(""))}</section>
+      <section class="panel"><h2>Subscription status</h2>${table(["Status","Schools"],Object.entries(labels).map(([key,label])=>`<tr><td>${esc(label)}</td><td>${data.counts[key]}</td></tr>`).join(""))}<p class="note">No current coverage means no valid paid period or active trial is recorded; it does not establish an unpaid invoice. Pending, suspended and cancelled schools are counted separately.</p></section>
+      <section class="panel"><h2>School overview</h2>${table(["School","Access status","Subscription","Trial ends","Paid until"],data.schools.map(row=>`<tr><td>${esc(row.name)}</td><td>${esc(row.status)}</td><td>${esc(labels[row.subscription_state] || row.subscription_state)}</td><td>${platformDate(row.trial_ends_at)}</td><td>${platformDate(row.subscription_paid_until)}</td></tr>`).join(""))}<p class="note">Registration history reflects schools still retained in the platform; permanently deleted schools are not included. <a href="#platform-billing">Manage billing and subscriptions</a></p></section>`;
+  } catch(error) { if(output.isConnected) output.textContent=`Platform analytics could not load: ${error.message}. Use Update analytics to retry.`; }
+  finally {button.disabled=false;}
 }
 function platform() {
   const organisationTypes = [
@@ -2044,6 +2088,9 @@ function wire() {
         navigate(a.dataset.nav);
       }),
   );
+  if (view === "platform-analytics" && $("#platform-analytics-filter")) {
+    $("#platform-analytics-filter").onsubmit = event => { event.preventDefault(); loadPlatformAnalytics(); };
+  }
   if (view === "analytics" && $("#analytics-filter")) {
     $("#analytics-filter").onsubmit = event => { event.preventDefault(); loadAnalytics(); };
   }

@@ -1,4 +1,4 @@
-import { analyticsRange, schoolAnalytics } from "./analytics.mjs";
+import { analyticsRange, schoolAnalytics, platformAnalytics } from "./analytics.mjs";
 import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -2978,6 +2978,14 @@ const server = http.createServer(async (req, res) => {
         results: results.rows,
         attendance: attendance.rows,
       });
+      return;
+    }
+    if (pathname === "/api/platform/analytics") {
+      await requirePlatformOwner(req);
+      if (req.method !== "GET") { json(res,405,{error:"Method not allowed"}); return; }
+      const from=requestUrl.searchParams.get("from"), to=requestUrl.searchParams.get("to");
+      try { analyticsRange(from,to); } catch(error) { json(res,400,{error:error.message}); return; }
+      json(res,200,await platformAnalytics(query,from,to));
       return;
     }
     if (pathname === "/api/platform/billing") {
