@@ -420,3 +420,16 @@ test('invalid admission links cannot submit and the generic form remains usable'
   else{assert.equal(calls,0);assert.equal(button.disabled,false);}
  }
 });
+
+test('duplicate onboarding is blocked and returning schools receive next steps', async () => {
+  const [server, script] = await Promise.all([
+    readFile('apps/school-web/server.mjs', 'utf8'),
+    readFile('apps/school-web/public/onboarding.js', 'utf8'),
+  ]);
+  assert.match(server, /code: "school_already_onboarded"/);
+  assert.match(server, /status IN \('pending','active'\)/);
+  assert.match(server, /nextStep: isActive \? "sign_in" : "check_email"/);
+  assert.match(script, /showNextSteps/);
+  assert.match(script, /Do not submit another onboarding request/);
+  assert.match(script, /Sign in to the school portal/);
+});

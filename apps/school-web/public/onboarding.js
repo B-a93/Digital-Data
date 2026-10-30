@@ -2,6 +2,61 @@ const form = document.querySelector("#onboarding-request-form");
 const error = document.querySelector("#onboarding-error");
 const success = document.querySelector("#onboarding-success");
 
+function showNextSteps(data, mode) {
+  const title = document.createElement("h3");
+  const message = document.createElement("p");
+  const steps = document.createElement("ol");
+  const link = document.createElement("a");
+  const active = data.nextStep === "sign_in";
+
+  title.textContent = active
+    ? "Your school is already onboarded"
+    : mode === "assisted"
+      ? "Your onboarding request was received"
+      : "Your school onboarding has started";
+  message.textContent =
+    data.message ||
+    data.error ||
+    (active
+      ? "Please sign in to continue to your school workspace."
+      : "Check the administrator email for the secure activation link.");
+
+  const stepText = active
+    ? [
+        "Select Sign in below.",
+        "Use the administrator email connected to the school.",
+        "Continue managing students, fees, attendance and results.",
+      ]
+    : mode === "assisted"
+      ? [
+          "Elegant Empire AI will review the school details.",
+          "We will contact the preferred contact person.",
+          "Do not submit another onboarding request.",
+        ]
+      : [
+          "Open the administrator email inbox and check the spam folder.",
+          "Select the secure activation link in the email.",
+          "Create or sign in to the administrator account.",
+          "Complete the school settings, then add or import school records.",
+        ];
+  for (const text of stepText) {
+    const item = document.createElement("li");
+    item.textContent = text;
+    steps.append(item);
+  }
+
+  link.className = "button";
+  link.href = active ? "/" : "mailto:contact@elegantempireai.com";
+  link.textContent = active ? "Sign in to the school portal" : "Contact support";
+
+  success.replaceChildren(title, message, steps, link);
+  success.hidden = false;
+  for (const child of form.children) {
+    if (child !== success) child.hidden = true;
+  }
+  success.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = form.querySelector("button[type='submit']");
@@ -44,15 +99,15 @@ form.addEventListener("submit", async (event) => {
       }),
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok)
+    const mode = fields.get("onboardingMode");
+    if (
+      !response.ok &&
+      !(response.status === 409 && data.code === "school_already_onboarded")
+    )
       throw Error(data.error || "The request could not be sent.");
     form.reset();
     form.classList.remove("was-validated");
-    success.textContent = data.message ||
-      (fields.get("onboardingMode") === "self_service"
-        ? "Your workspace request has been received. Check your email for the secure activation link."
-        : "Your assisted onboarding request has been received. Elegant Empire AI will contact you after reviewing the details.");
-    success.hidden = false;
+    showNextSteps(data, mode);
   } catch (requestError) {
     error.textContent = requestError.message;
   } finally {
