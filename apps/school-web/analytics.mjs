@@ -8,7 +8,7 @@ export function analyticsRange(from, to) {
 }
 export async function schoolAnalytics(query, schoolId, from, to) {
   analyticsRange(from,to);
-  const [students, balances, payments, attendance, admissions] = await Promise.all([
+  const [students, balances, payments, attendance, admissions, absences, exams, enrolment] = await Promise.all([
     query(`SELECT COALESCE(c.name,'Unassigned') AS class_name,s.status,COUNT(*)::int AS count
       FROM students s LEFT JOIN classes c ON c.id=s.class_id AND c.school_id=s.school_id
       WHERE s.school_id=$1 GROUP BY c.name,s.status ORDER BY c.name,s.status`,[schoolId]),
@@ -36,7 +36,69 @@ export async function schoolAnalytics(query, schoolId, from, to) {
     query(`SELECT status,COUNT(*)::int AS count FROM student_admission_applications
       WHERE school_id=$1 AND created_at >= $2::date AND created_at < $3::date + interval '1 day'
       GROUP BY status ORDER BY status`,[schoolId,from,to]),
+    query(`SELECT s.id,s.student_number,s.full_name,COALESCE(c.name,'Unassigned') AS class_name,
+      COUNT(*)::int AS absent_days FROM attendance a
+      JOIN students s ON s.id=a.student_id AND s.school_id=a.school_id
+      LEFT JOIN classes c ON c.id=s.class_id AND c.school_id=s.school_id
+      WHERE a.school_id=$1 AND a.attendance_date BETWEEN $2::date AND $3::date AND a.status='absent'
+      GROUP BY s.id,c.name HAVING COUNT(*)>=3 ORDER BY absent_days DESC,s.full_name`,[schoolId,from,to]),
+    query(`WITH latest AS (
+      SELECT DISTINCT ON (a.class_id,a.subject_id,a.academic_year,a.term) a.*
+      FROM assessments a WHERE a.school_id=$1 AND a.published_at IS NOT NULL
+        AND a.published_at < $3::date + interval '1 day'
+      ORDER BY a.class_id,a.subject_id,a.academic_year,a.term,a.published_at DESC,a.id DESC
+    ) SELECT a.academic_year,a.term,COALESCE(su.name,'General') AS subject_name,
+      c.name AS class_name,s.id AS student_id,s.student_number,s.full_name,
+      m.score,a.maximum_score,a.grade_scale,a.pass_mark_snapshot
+      FROM latest a JOIN assessment_marks m ON m.assessment_id=a.id
+      JOIN students s ON s.id=m.student_id AND s.school_id=a.school_id
+      JOIN classes c ON c.id=a.class_id AND c.school_id=a.school_id
+      LEFT JOIN subjects su ON su.id=a.subject_id AND su.school_id=a.school_id
+      WHERE a.school_id=$1 AND a.published_at >= $2::date
+      ORDER BY a.academic_year,a.term,c.name,su.name,s.full_name`,[schoolId,from,to]),
+    query(`SELECT p.id,p.academic_year,p.term,p.status,p.opened_at,p.closed_at,
+      COUNT(e.student_id) FILTER(WHERE e.new_status='active')::int AS active_students
+      FROM academic_periods p LEFT JOIN LATERAL (
+        SELECT DISTINCT ON (ev.student_id) ev.student_id,ev.new_status
+        FROM student_lifecycle_events ev WHERE ev.school_id=$1
+          AND ev.event_date <= COALESCE(p.closed_at,now())::date
+          AND ev.created_at <= COALESCE(p.closed_at,now())
+        ORDER BY ev.student_id,ev.event_date DESC,ev.created_at DESC,ev.id DESC
+      ) e ON true WHERE p.school_id=$1
+      GROUP BY p.id ORDER BY p.opened_at,p.id`,[schoolId]),
   ]);
   return {from,to,generatedAt:new Date().toISOString(),students:students.rows,
-    balances:balances.rows[0],payments:payments.rows,attendance:attendance.rows,admissions:admissions.rows};
+    balances:balances.rows[0],payments:payments.rows,attendance:attendance.rows,admissions:admissions.rows,
+    collectionRate:collectionRate(balances.rows[0]),absences:absences.rows,
+    exams:summarizeExams(exams.rows),enrolment:enrolment.rows.map((row,index)=>({...row,
+      change:index ? Number(row.active_students)-Number(enrolment.rows[index-1].active_students) : null}))};
+}
+
+export function collectionRate(balances) {
+  const charged=Number(balances?.charged || 0), outstanding=Number(balances?.outstanding || 0);
+  return charged > 0 ? Math.max(0,Math.min(100,100*(charged-outstanding)/charged)) : null;
+}
+export function summarizeExams(rows) {
+  const groups=new Map(), support=[];
+  let marked=0,passed=0,unclassified=0;
+  for(const row of rows) {
+    const percentage=100*Number(row.score)/Number(row.maximum_score);
+    if(!Number.isFinite(percentage)) continue;
+    let passing=null;
+    if(Array.isArray(row.grade_scale?.bands) && row.grade_scale.bands.length) {
+      const bands=[...row.grade_scale.bands].sort((a,b)=>Number(b.min)-Number(a.min));
+      passing=Boolean((bands.find(b=>percentage>=Number(b.min)) || bands.at(-1)).passing);
+    } else if(row.pass_mark_snapshot != null) passing=percentage>=Number(row.pass_mark_snapshot);
+    const key=JSON.stringify([row.academic_year,row.term,row.class_name,row.subject_name]);
+    if(!groups.has(key)) groups.set(key,{academic_year:row.academic_year,term:row.term,
+      class_name:row.class_name,subject_name:row.subject_name,marks:0,classified:0,passed:0,sum:0});
+    const group=groups.get(key);group.marks++;group.sum+=percentage;
+    if(passing===null) unclassified++;
+    else {marked++;group.classified++;if(passing){passed++;group.passed++;}}
+    if(passing===false) support.push({student_id:row.student_id,student_number:row.student_number,
+      full_name:row.full_name,class_name:row.class_name,subject_name:row.subject_name,
+      academic_year:row.academic_year,term:row.term,percentage});
+  }
+  return {marked,passed,unclassified,passRate:marked ? 100*passed/marked : null,support,
+    subjects:[...groups.values()].map(g=>({...g,average:g.sum/g.marks,passRate:g.classified ? 100*g.passed/g.classified : null}))};
 }
