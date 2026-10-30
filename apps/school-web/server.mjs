@@ -335,6 +335,29 @@ const server = http.createServer(async (req, res) => {
         json(res, 400, { error: "Enter valid onboarding details." });
         return;
       }
+      const existingSchool = (
+        await query(
+          `SELECT id,status FROM schools
+           WHERE lower(regexp_replace(trim(name), '[[:space:]]+', ' ', 'g')) =
+                 lower(regexp_replace(trim($1), '[[:space:]]+', ' ', 'g'))
+             AND lower(trim(contact_email)) = lower(trim($2))
+             AND status IN ('pending','active')
+           ORDER BY created_at DESC LIMIT 1`,
+          [request.organisationName, request.email],
+        )
+      ).rows[0];
+      if (existingSchool) {
+        const isActive = existingSchool.status === "active";
+        json(res, 409, {
+          code: "school_already_onboarded",
+          onboardingStatus: existingSchool.status,
+          nextStep: isActive ? "sign_in" : "check_email",
+          error: isActive
+            ? "This school has already completed onboarding. Please sign in to continue."
+            : "This school has already started onboarding. Check the administrator email for the secure activation link.",
+        });
+        return;
+      }
       if (request.onboardingMode === "self_service") {
         const invite = invitation(),
           count = Number(request.studentCount || 0),
