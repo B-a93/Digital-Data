@@ -1515,3 +1515,8 @@ a:focus-visible {
   }
 }
 
+
+.analytics-filter { display:flex; flex-wrap:wrap; gap:16px; align-items:end; }
+.analytics-filter label { display:grid; gap:6px; }
+.analytics-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:16px; }
+.analytics-cards strong { font-size:1.8rem; color:var(--green, #146a56); }

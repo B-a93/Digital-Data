@@ -1,3 +1,4 @@
+import { analyticsRange, schoolAnalytics } from "./analytics.mjs";
 import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -2138,6 +2139,16 @@ const server = http.createServer(async (req, res) => {
         admissionDate,
       });
       json(res, 200, { student: updated });
+      return;
+    }
+    if (pathname === "/api/school/analytics") {
+      const context = await requireSchoolContext(req);
+      requireRole(context, "administrator");
+      if (req.method !== "GET") { json(res,405,{error:"Method not allowed"}); return; }
+      const from = requestUrl.searchParams.get("from"), to = requestUrl.searchParams.get("to");
+      try { analyticsRange(from,to); }
+      catch (error) { json(res,400,{error:error.message}); return; }
+      json(res,200,await schoolAnalytics(query,context.school_id,from,to));
       return;
     }
     if (pathname === "/api/school/finance") {

@@ -246,6 +246,7 @@ function save() {
 }
 const navItems = [
   ["dashboard", "◫", "Overview"],
+  ["analytics", "▥", "Data Analytics"],
   ["students", "♙", "Students"],
   ["admissions", "◇", "Admissions"],
   ["attendance", "✓", "Attendance"],
@@ -382,6 +383,7 @@ function render() {
   );
   $("#content").innerHTML = {
     dashboard,
+    analytics,
     students,
     admissions,
     attendance,
@@ -397,6 +399,52 @@ function render() {
     "platform-billing": platformBillingPage,
   }[view]();
   wire();
+  if (view === "analytics" && schoolDataLive && role === "Administrator") loadAnalytics();
+}
+function analytics() {
+  if (!schoolDataLive || role !== "Administrator") return heading("Data Analytics", "Sign in as a school administrator to see your school’s analytics.");
+  const today = localDate();
+  return heading("Data Analytics", `${esc(state.settings.name)} · Turn school records into informed decisions.`) + `
+    <section class="panel"><form id="analytics-filter" class="analytics-filter">
+      <label>From <input type="date" name="from" value="${today.slice(0,7)}-01" required></label>
+      <label>To <input type="date" name="to" value="${today}" required></label>
+      <button class="button">Update analytics</button></form>
+      <p class="note">Dates filter payment activity, recorded attendance and applications received. Student counts and balances show the current position across all periods.</p>
+    </section><div id="analytics-output" aria-live="polite">Loading your school’s analytics…</div>`;
+}
+async function loadAnalytics() {
+  const form = $("#analytics-filter"), output = $("#analytics-output");
+  if (!form || !output) return;
+  const button = form.querySelector("button");
+  button.disabled = true;
+  output.textContent = "Loading your school’s analytics…";
+  try {
+    const values = new FormData(form);
+    const data = await schoolApi(`/api/school/analytics?${new URLSearchParams(values)}`);
+    if (!output.isConnected) return;
+    const total = rows => rows.reduce((sum,row)=>sum+Number(row.count),0);
+    const active = total(data.students.filter(row=>row.status === "active"));
+    const marks = total(data.attendance);
+    const attended = total(data.attendance.filter(row=>["present","late"].includes(row.status)));
+    const cards = [["Active students",active],["Outstanding fees",money(Number(data.balances.outstanding))],
+      ["Students with a balance",data.balances.owing],["Net payments in range",money(data.payments.reduce((sum,row)=>sum+Number(row.amount),0))],
+      ["Attendance in recorded marks",marks ? `${(100*attended/marks).toFixed(1)}%` : "No marks"],
+      ["Applications received",total(data.admissions)]];
+    const monthly = new Map();
+    for (const row of data.attendance) {
+      if (!monthly.has(row.month)) monthly.set(row.month,{total:0,present:0});
+      const item = monthly.get(row.month); item.total += Number(row.count);
+      if (["present","late"].includes(row.status)) item.present += Number(row.count);
+    }
+    output.innerHTML = `<p class="note">${esc(data.from)} to ${esc(data.to)} · Updated ${esc(new Date(data.generatedAt).toLocaleString())}</p>
+      <div class="analytics-cards">${cards.map(([label,value])=>`<section class="panel"><p>${esc(label)}</p><strong>${esc(value)}</strong></section>`).join("")}</div>
+      <section class="panel"><h2>Current student numbers</h2>${table(["Class","Status","Students"],data.students.map(row=>`<tr><td>${esc(row.class_name)}</td><td>${esc(row.status)}</td><td>${row.count}</td></tr>`).join(""))}</section>
+      <section class="panel"><h2>Payment trend</h2><p class="note">Net payments by payment month, after all recorded refunds and voids. Months without payments are omitted. This is not a profit report.</p>${table(["Month","Net payments"],data.payments.map(row=>`<tr><td>${esc(row.month)}</td><td>${money(Number(row.amount))}</td></tr>`).join(""))}</section>
+      <section class="panel"><h2>Attendance trend</h2><p class="note">Present plus late divided by all recorded marks, including absent and excused. Missing registers are excluded; this does not measure register completion.</p>${table(["Month","Recorded marks","Present or late","Rate"],[...monthly].map(([month,row])=>`<tr><td>${esc(month)}</td><td>${row.total}</td><td>${row.present}</td><td>${(100*row.present/row.total).toFixed(1)}%</td></tr>`).join(""))}</section>
+      <section class="panel"><h2>Admission applications</h2><p class="note">Current status of applications received within the selected dates.</p>${table(["Status","Applications"],data.admissions.map(row=>`<tr><td>${esc(row.status)}</td><td>${row.count}</td></tr>`).join(""))}</section>
+      <p class="note">Outstanding fees are calculated per student after discounts, waivers, refunds and voids. One student’s credit does not reduce another student’s balance. All student statuses are included.</p>`;
+  } catch (error) { if (output.isConnected) output.textContent = `Analytics could not load: ${error.message}. Use Update analytics to retry.`; }
+  finally { button.disabled = false; }
 }
 function platform() {
   const organisationTypes = [
@@ -1992,6 +2040,9 @@ function wire() {
         navigate(a.dataset.nav);
       }),
   );
+  if (view === "analytics" && $("#analytics-filter")) {
+    $("#analytics-filter").onsubmit = event => { event.preventDefault(); loadAnalytics(); };
+  }
   if (view === "admissions") {
     $("#copy-admission-link").onclick = async () => {
       try {
