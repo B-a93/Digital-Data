@@ -12,6 +12,7 @@ import {
 } from "./database.mjs";
 import {
   requirePlatformOwner,
+  isPlatformOwnerEmail,
   verifyAuthenticatedUser,
 } from "./auth-server.mjs";
 import {
@@ -485,10 +486,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const user = await verifyAuthenticatedUser(req);
-      const ownerEmail = String(process.env.PLATFORM_OWNER_EMAIL || "")
-        .trim()
-        .toLowerCase();
-      if (ownerEmail && user.email === ownerEmail) {
+      if (isPlatformOwnerEmail(user.email)) {
         json(res, 200, {
           user: { id: user.id, email: user.email, role: "platform_owner" },
           school: null,

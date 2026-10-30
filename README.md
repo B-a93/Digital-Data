@@ -25,3 +25,16 @@ Dashboard, fictional student registration, daily attendance, fee charges and pay
 **Demo only:** browser localStorage contains fictional records. There is no authentication, server database, real school isolation, backup, offline synchronisation, or online payment processing. Do not enter real student or financial data. Browser storage is neither secure nor a durable ledger. A demo-role selector illustrates navigation; it is not access control. Reset restores fictional data.
 
 See `docs/prototype-scope.md` for decisions and implementation gaps. Nothing is published to GitHub or deployed automatically.
+
+
+### Additional platform owners
+
+Keep `PLATFORM_OWNER_EMAIL` set to the original owner's address. Set
+`PLATFORM_OWNER_EMAILS` in the hosting environment to a comma-separated list of
+additional owner email addresses, then restart/redeploy the Node.js service.
+Both session discovery and every owner API use the same exact-email allowlist.
+These accounts have full platform permissions, including school administration,
+billing, analytics and deletion actions. Each person must authenticate with their
+own Neon Auth account; configuring an address does not create an account or send
+an invitation. Remove an address from the list and restart to revoke owner access.
+Never put passwords in these variables or share the original owner's login.
