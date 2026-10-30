@@ -439,3 +439,47 @@ CREATE INDEX IF NOT EXISTS attendance_school_date_idx ON attendance(school_id, a
 CREATE INDEX IF NOT EXISTS charges_school_student_idx ON fee_charges(school_id, student_id);
 CREATE INDEX IF NOT EXISTS payments_school_student_idx ON payments(school_id, student_id);
 
+
+-- Approved pilot exception: six calendar months TOTAL from the original trial
+-- start, not six additional months from each deployment. Match both identifiers
+-- and apply once; subsequent owner changes must not be overwritten on restart.
+CREATE TABLE IF NOT EXISTS platform_data_migrations (
+  migration_key text PRIMARY KEY,
+  applied_at timestamptz NOT NULL DEFAULT now(),
+  details jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+DO $pilot_trial$
+DECLARE
+  target_school uuid;
+  matches integer;
+  previous_end timestamptz;
+  new_end timestamptz;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext('gayenjorro-six-month-pilot-20261030'));
+  IF NOT EXISTS (SELECT 1 FROM platform_data_migrations
+    WHERE migration_key='gayenjorro-six-month-pilot-20261030') THEN
+    SELECT count(*) INTO matches FROM schools s JOIN school_onboarding o ON o.school_id=s.id
+      WHERE lower(trim(s.name))='gayenjorro skills academy'
+        AND lower(trim(o.administrator_email))='ceo@gayenjorroskillsacademy.com';
+    IF matches=1 THEN
+      SELECT s.id,s.trial_ends_at,GREATEST(s.trial_ends_at,s.trial_started_at + interval '6 months')
+        INTO target_school,previous_end,new_end
+        FROM schools s JOIN school_onboarding o ON o.school_id=s.id
+        WHERE lower(trim(s.name))='gayenjorro skills academy'
+          AND lower(trim(o.administrator_email))='ceo@gayenjorroskillsacademy.com'
+          AND s.status='active' AND s.trial_started_at IS NOT NULL
+        FOR UPDATE OF s;
+      IF target_school IS NOT NULL AND new_end>now() THEN
+        UPDATE schools SET trial_ends_at=new_end,trial_status='active',updated_at=now()
+          WHERE id=target_school;
+        INSERT INTO platform_data_migrations(migration_key,details)
+          VALUES('gayenjorro-six-month-pilot-20261030',jsonb_build_object(
+            'school_id',target_school,'reason','Pilot school: six-month total trial approved by platform owner',
+            'previous_trial_ends_at',previous_end,'trial_ends_at',new_end));
+      END IF;
+    ELSE
+      RAISE NOTICE 'Gayenjorro pilot trial not applied: expected one matching school, found %',matches;
+    END IF;
+  END IF;
+END;
+$pilot_trial$;
