@@ -3102,9 +3102,10 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const result = await query(
-        `UPDATE schools SET billing_status=$2,status=$3,updated_at=now() WHERE id=$1
-         AND status NOT IN ('cancelled','pending_deletion') RETURNING id,name,status,billing_status`,
-        [billingSchool[1], action === "suspend" ? "suspended" : "unpaid", action === "suspend" ? "suspended" : "active"],
+        `UPDATE schools SET billing_status=CASE WHEN $2='suspended' THEN 'suspended'
+           WHEN subscription_paid_until>=CURRENT_DATE THEN 'paid' ELSE 'unpaid' END,
+           status=$2,updated_at=now() WHERE id=$1 AND status IN ('active','suspended') RETURNING id,name,status,billing_status`,
+        [billingSchool[1], action === "suspend" ? "suspended" : "active"],
       );
       if (!result.rows[0]) {
         json(res, 404, { error: "School cannot be updated." });
@@ -3119,7 +3120,7 @@ const server = http.createServer(async (req, res) => {
         const result = await query(
           `SELECT s.id,s.name,s.slug,s.school_type,s.region,s.district,s.status,s.created_at,
                   s.cancellation_requested_at,s.retention_until,s.deletion_requested_at,
-                  s.onboarding_mode,s.trial_requested,s.trial_status,s.trial_started_at,s.trial_ends_at,
+                  s.onboarding_mode,s.billing_status,s.trial_requested,s.trial_status,s.trial_started_at,s.trial_ends_at,
                   o.administrator_name,o.administrator_email,o.invitation_status,o.invited_at,o.invitation_expires_at
            FROM schools s LEFT JOIN school_onboarding o ON o.school_id=s.id ORDER BY s.created_at DESC`,
         );
