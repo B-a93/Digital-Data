@@ -483,3 +483,10 @@ BEGIN
   END IF;
 END;
 $pilot_trial$;
+
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS access_change_reason text;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS access_changed_by text;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS access_notification_status text;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS access_notification_id uuid;
+
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS access_notification_started_at timestamptz;

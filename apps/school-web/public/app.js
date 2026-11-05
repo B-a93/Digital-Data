@@ -497,7 +497,7 @@ async function loadPlatformAnalytics() {
 function schoolAccessButton(school) {
   if (!["active", "suspended"].includes(school.status)) return "—";
   const suspended = school.status === "suspended" || school.billing_status === "suspended";
-  return `<button class="text-button billing-access" data-id="${esc(school.id)}" data-name="${esc(school.name)}" data-action="${suspended ? "reactivate" : "suspend"}">${suspended ? "Reactivate" : "Suspend"}</button>`;
+  return `${["failed", "sending"].includes(school.access_notification_status) ? `<span class="sub">${school.access_notification_status === "sending" ? "Email processing. Retry after 5 minutes if still pending." : "Email failed to send"}</span><button class="text-button retry-access-email" data-id="${esc(school.id)}">Retry email</button>` : ""}<button class="text-button billing-access" data-id="${esc(school.id)}" data-name="${esc(school.name)}" data-action="${suspended ? "reactivate" : "suspend"}">${suspended ? "Reactivate" : "Suspend"}</button>`;
 }
 function platform() {
   const organisationTypes = [
@@ -2144,19 +2144,37 @@ function wire() {
       (charges ? Math.min(100, (paid / charges) * 100) : 0) + "%";
   }
   if (view === "platform" || view === "platform-billing") {
+    document.querySelectorAll(".retry-access-email").forEach(button => {
+      button.onclick = async () => {
+        button.disabled = true;
+        try {
+          const result = await platformApi(`/api/platform/billing/schools/${button.dataset.id}`, {
+            method: "PATCH", body: JSON.stringify({action:"retry_notification"}),
+          });
+          await Promise.all([loadSchools(), loadPlatformBilling()]);
+          toast(result.notificationStatus === "sent" ? "Notification accepted by the email server." : "Email still failed. Check the server email settings and try again.");
+        } catch (error) { toast(error.message); button.disabled = false; }
+      };
+    });
     document.querySelectorAll(".billing-access").forEach(
       (button) =>
         (button.onclick = async () => {
           const action = button.dataset.action;
-          if (!confirm(`${action === "suspend" ? "Suspend" : "Reactivate"} access for ${button.dataset.name}?`)) return;
+          const reason = prompt(`Enter the reason for ${action === "suspend" ? "suspending" : "reactivating"} ${button.dataset.name}. This will be emailed to the school administrator.`);
+          if (reason === null) return;
+          if (!reason.trim() || reason.trim().length > 1000) {
+            toast("Enter a reason of 1 to 1,000 characters.");
+            return;
+          }
+          if (!confirm(`${action === "suspend" ? "Suspend" : "Reactivate"} ${button.dataset.name} and email this reason?\n\n${reason.trim()}`)) return;
           button.disabled = true;
           try {
-            await platformApi(`/api/platform/billing/schools/${button.dataset.id}`, {
+            const result = await platformApi(`/api/platform/billing/schools/${button.dataset.id}`, {
               method: "PATCH",
-              body: JSON.stringify({ action }),
+              body: JSON.stringify({ action, reason: reason.trim() }),
             });
             await Promise.all([loadSchools(), loadPlatformBilling()]);
-            toast(`School access ${action === "suspend" ? "suspended" : "reactivated"}.`);
+            toast(`School access ${action === "suspend" ? "suspended" : "reactivated"}. ${result.notificationStatus === "sent" ? "Notification accepted by the email server." : "Email failed. Use Retry email beside the school."}`);
           } catch (err) {
             toast(err.message);
             button.disabled = false;

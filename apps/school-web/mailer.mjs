@@ -128,3 +128,22 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+
+export function schoolAccessMessage({ name, school, action, reason, link }) {
+  const status = action === 'suspend' ? 'suspended' : 'reactivated';
+  const nextStep = action === 'suspend'
+    ? 'Please reply to this email to discuss the suspension with Elegant Empire AI.'
+    : `You can sign in with your existing account at ${link}`;
+  return {
+    subject: `${school} — school portal access ${status}`,
+    text: `Hello ${name || 'School administrator'},\n\nYour School Management Portal access for ${school} has been ${status} by the platform owner.\n\nReason: ${reason}\n\n${nextStep}\n\nElegant Empire AI`,
+    html: `<p>Hello ${escapeHtml(name || 'School administrator')},</p><p>Your School Management Portal access for <strong>${escapeHtml(school)}</strong> has been <strong>${status}</strong> by the platform owner.</p><p><strong>Reason</strong><br>${escapeHtml(reason)}</p><p>${escapeHtml(nextStep)}</p><p>Elegant Empire AI</p>`,
+  };
+}
+export async function sendSchoolAccessNotification(details) {
+  if (!details.to) throw new Error('School administrator email is missing');
+  const transporter = nodemailer.createTransport(config());
+  const from = process.env.SMTP_FROM?.trim() || process.env.SMTP_USER?.trim();
+  const result = await transporter.sendMail({ from, to: details.to, ...schoolAccessMessage(details) });
+  if (!result.accepted?.length || result.rejected?.length) throw new Error('School administrator email was rejected');
+}

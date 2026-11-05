@@ -3,7 +3,7 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   databaseHealth,
   initializeDatabase,
@@ -19,6 +19,7 @@ import {
   sendOnboardingRequest,
   sendSchoolInvitation,
   sendStaffInvitation,
+  sendSchoolAccessNotification,
 } from "./mailer.mjs";
 const root = path.resolve(fileURLToPath(new URL("./public/", import.meta.url)));
 const neonAuthUrl =
@@ -3017,7 +3018,7 @@ const server = http.createServer(async (req, res) => {
       }
       const [schools, payments] = await Promise.all([
         query(
-          `SELECT s.id,s.name,s.slug,s.status,s.billing_status,s.trial_status,
+          `SELECT s.id,s.name,s.slug,s.status,s.billing_status,s.access_notification_status,s.trial_status,
                   s.trial_ends_at,s.subscription_paid_until,s.estimated_student_count,
                   COALESCE((SELECT count(*) FROM students st WHERE st.school_id=s.id AND st.status='active'),0)::integer AS student_count,
                   o.administrator_name,o.administrator_email,
@@ -3091,27 +3092,69 @@ const server = http.createServer(async (req, res) => {
     }
     const billingSchool = pathname.match(/^\/api\/platform\/billing\/schools\/([0-9a-f-]{36})$/);
     if (billingSchool) {
-      await requirePlatformOwner(req);
+      const owner = await requirePlatformOwner(req);
       if (req.method !== "PATCH") {
         json(res, 405, { error: "Method not allowed" });
         return;
       }
-      const data = await readJsonBody(req), action = String(data.action || "");
-      if (!["suspend", "reactivate"].includes(action)) {
+      const data = await readJsonBody(req);
+      const action = String(data.action || "");
+      const reason = String(data.reason || "").trim();
+      if (!["suspend", "reactivate", "retry_notification"].includes(action)) {
         json(res, 400, { error: "Choose suspend or reactivate." });
         return;
       }
-      const result = await query(
-        `UPDATE schools SET billing_status=CASE WHEN $2='suspended' THEN 'suspended'
-           WHEN subscription_paid_until>=CURRENT_DATE THEN 'paid' ELSE 'unpaid' END,
-           status=$2,updated_at=now() WHERE id=$1 AND status IN ('active','suspended') RETURNING id,name,status,billing_status`,
-        [billingSchool[1], action === "suspend" ? "suspended" : "active"],
-      );
-      if (!result.rows[0]) {
-        json(res, 404, { error: "School cannot be updated." });
+      if (action !== "retry_notification" && (!reason || reason.length > 1000)) {
+        json(res, 400, { error: "Enter a reason of 1 to 1,000 characters to include in the school email." });
         return;
       }
-      json(res, 200, { school: result.rows[0] });
+      const school = await transaction(async (client) => {
+        const found = await client.query(
+          `SELECT s.*,o.administrator_name,o.administrator_email
+           FROM schools s LEFT JOIN school_onboarding o ON o.school_id=s.id
+           WHERE s.id=$1 AND s.status IN ('active','suspended') FOR UPDATE OF s`,
+          [billingSchool[1]],
+        );
+        const current = found.rows[0];
+        if (!current) throw Object.assign(new Error("School cannot be updated."), {status:404});
+        if (action === "retry_notification") {
+          if (current.access_notification_status !== "failed" && !(current.access_notification_status === "sending" && Date.now() - new Date(current.access_notification_started_at).getTime() > 300000))
+            throw Object.assign(new Error("This notification is already sent or being processed."), {status:409});
+          await client.query(`UPDATE schools SET access_notification_status='sending',access_notification_started_at=now() WHERE id=$1`, [current.id]);
+          return current;
+        }
+        const status = action === "suspend" ? "suspended" : "active";
+        if (current.status === status)
+          throw Object.assign(new Error("School access has already changed. Refresh the page."), {status:409});
+        const result = await client.query(
+          `UPDATE schools SET billing_status=CASE WHEN $2='suspended' THEN 'suspended'
+             WHEN subscription_paid_until>=CURRENT_DATE THEN 'paid' ELSE 'unpaid' END,
+             status=$2,access_change_reason=$3,access_changed_by=$4,
+             access_notification_status='sending',access_notification_started_at=now(),access_notification_id=$5,updated_at=now()
+           WHERE id=$1 RETURNING *`,
+          [current.id,status,reason,owner.id,randomUUID()],
+        );
+        return {...current,...result.rows[0]};
+      });
+      let notificationStatus = "sent";
+      try {
+        await sendSchoolAccessNotification({
+          to: school.administrator_email, name: school.administrator_name,
+          school: school.name, action: school.status === "suspended" ? "suspend" : "reactivate",
+          reason: school.access_change_reason,
+          link: baseUrl() || "https://school.elegantempireai.com/",
+        });
+      } catch (error) {
+        notificationStatus = "failed";
+        console.error("[school-access] notification failed for", school.id, error.message);
+      }
+      await query(`UPDATE schools SET access_notification_status=$3
+        WHERE id=$1 AND access_notification_id=$2`,
+        [school.id,school.access_notification_id,notificationStatus]);
+      json(res, 200, {
+        school: {id:school.id,name:school.name,status:school.status},
+        notificationStatus,
+      });
       return;
     }
     if (pathname === "/api/platform/schools") {
@@ -3120,7 +3163,7 @@ const server = http.createServer(async (req, res) => {
         const result = await query(
           `SELECT s.id,s.name,s.slug,s.school_type,s.region,s.district,s.status,s.created_at,
                   s.cancellation_requested_at,s.retention_until,s.deletion_requested_at,
-                  s.onboarding_mode,s.billing_status,s.trial_requested,s.trial_status,s.trial_started_at,s.trial_ends_at,
+                  s.onboarding_mode,s.billing_status,s.access_notification_status,s.trial_requested,s.trial_status,s.trial_started_at,s.trial_ends_at,
                   o.administrator_name,o.administrator_email,o.invitation_status,o.invited_at,o.invitation_expires_at
            FROM schools s LEFT JOIN school_onboarding o ON o.school_id=s.id ORDER BY s.created_at DESC`,
         );
