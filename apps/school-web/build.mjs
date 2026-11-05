@@ -13,3 +13,5 @@ await cp('apps/school-web/database/schema.sql','dist/database/schema.sql');
 console.log('School portal frontend and Node.js server built in dist.');
 
 await cp("apps/school-web/analytics.mjs","dist/analytics.mjs");
+
+await cp("apps/school-web/branches.mjs","dist/branches.mjs");

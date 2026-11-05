@@ -1,3 +1,4 @@
+import { mountBranches } from "./branches.js";
 import {
   classes,
   seed,
@@ -247,6 +248,7 @@ function save() {
 const navItems = [
   ["dashboard", "◫", "Overview"],
   ["analytics", "▥", "Data Analytics"],
+  ["branches", "▦", "Branch comparison"],
   ["students", "♙", "Students"],
   ["admissions", "◇", "Admissions"],
   ["attendance", "✓", "Attendance"],
@@ -384,6 +386,7 @@ function render() {
   );
   $("#content").innerHTML = {
     dashboard,
+    branches: () => heading("Branch comparison", "Compare equivalent courses across your school outlets.") + '<div id="branch-page"></div>',
     analytics,
     students,
     admissions,
@@ -401,6 +404,7 @@ function render() {
     "platform-analytics": platformAnalyticsPage,
   }[view]();
   wire();
+  if (view === "branches") mountBranches($("#branch-page"), platformApi, isPlatformOwner);
   if (view === "platform-analytics" && isPlatformOwner) loadPlatformAnalytics();
   if (view === "analytics" && schoolDataLive && role === "Administrator") loadAnalytics();
 }

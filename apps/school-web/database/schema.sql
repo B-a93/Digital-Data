@@ -490,3 +490,28 @@ ALTER TABLE schools ADD COLUMN IF NOT EXISTS access_notification_status text;
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS access_notification_id uuid;
 
 ALTER TABLE schools ADD COLUMN IF NOT EXISTS access_notification_started_at timestamptz;
+
+CREATE TABLE IF NOT EXISTS school_branch_groups (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  owner_school_id uuid NOT NULL UNIQUE REFERENCES schools(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS school_branch_members (
+  school_id uuid PRIMARY KEY REFERENCES schools(id) ON DELETE CASCADE,
+  group_id uuid NOT NULL REFERENCES school_branch_groups(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS school_branch_comparisons (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  group_id uuid NOT NULL REFERENCES school_branch_groups(id) ON DELETE CASCADE,
+  school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  assessment_id uuid NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+  course text NOT NULL,
+  level text NOT NULL,
+  component text NOT NULL,
+  basis text NOT NULL,
+  note text NOT NULL DEFAULT '',
+  note_updated_at timestamptz,
+  UNIQUE(group_id,school_id,assessment_id)
+);
+CREATE INDEX IF NOT EXISTS branch_comparison_group_idx ON school_branch_comparisons(group_id);

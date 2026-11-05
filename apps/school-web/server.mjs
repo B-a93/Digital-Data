@@ -1,3 +1,4 @@
+import { branchRequest } from "./branches.mjs";
 import { analyticsRange, schoolAnalytics, platformAnalytics } from "./analytics.mjs";
 import http from "node:http";
 import { readFile } from "node:fs/promises";
@@ -233,6 +234,10 @@ const server = http.createServer(async (req, res) => {
     const pathname = decodeURIComponent(requestUrl.pathname);
     if (pathname === "/api/auth" || pathname.startsWith("/api/auth/")) {
       await proxyAuth(req, res, pathname, requestUrl.search);
+      return;
+    }
+    if (pathname === "/api/branches" || pathname === "/api/branches/setup") {
+      json(res,200,await branchRequest(req,requestUrl,readJsonBody));
       return;
     }
     if (pathname === "/api/health") {
