@@ -515,3 +515,7 @@ CREATE TABLE IF NOT EXISTS school_branch_comparisons (
   UNIQUE(group_id,school_id,assessment_id)
 );
 CREATE INDEX IF NOT EXISTS branch_comparison_group_idx ON school_branch_comparisons(group_id);
+
+-- Branch administrators use the existing verified staff invitation flow.
+ALTER TABLE staff_invitations DROP CONSTRAINT IF EXISTS staff_invitations_role_check;
+ALTER TABLE staff_invitations ADD CONSTRAINT staff_invitations_role_check CHECK (role IN ('teacher','finance','administrator'));

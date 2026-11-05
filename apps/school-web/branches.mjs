@@ -56,7 +56,7 @@ export async function branchRequest(req, url, readBody) {
   const allowed = groups.rows;
   const ownerGroups = allowed.filter(g => adminIds.includes(g.owner_school_id)).map(g => g.id);
   const groupIds = allowed.map(g => g.id);
-  const branches = await query(`SELECT m.group_id,s.id,s.name FROM school_branch_members m JOIN schools s ON s.id=m.school_id
+  const branches = await query(`SELECT m.group_id,s.id,s.name,s.region,s.district,s.contact_name,s.contact_email FROM school_branch_members m JOIN schools s ON s.id=m.school_id
     WHERE m.group_id=ANY($1::uuid[]) AND s.status='active'
       AND (m.group_id=ANY($2::uuid[]) OR s.id=ANY($3::uuid[])) ORDER BY s.name`,[groupIds,ownerGroups,adminIds]);
   if (req.method === 'POST') {
@@ -133,5 +133,5 @@ export async function branchRequest(req, url, readBody) {
       attendanceRate:Number(metrics.recorded) ? 100*Number(metrics.attended)/Number(metrics.recorded) : null,
       comparisonKey:comparisonKey(match)});
   }
-  return {managedSchools:memberships.rows.map(s => ({id:s.school_id,name:s.name})),groups:allowed.map(g => ({id:g.id,name:g.name,canCompare:ownerGroups.includes(g.id)})),branches:branches.rows,assessments:assessments.rows,rows};
+  return {managedSchools:memberships.rows.map(s => ({id:s.school_id,name:s.name})),groups:allowed.map(g => ({id:g.id,name:g.name,ownerSchoolId:g.owner_school_id,canCompare:ownerGroups.includes(g.id)})),branches:branches.rows,assessments:assessments.rows,rows};
 }

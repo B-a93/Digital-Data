@@ -47,7 +47,7 @@ export async function sendStaffInvitation({
     timeStyle: "short",
     timeZone: "Africa/Banjul",
   }).format(expiresAt);
-  const roleName = role === "finance" ? "Finance" : "Teacher";
+  const roleName = role === "administrator" ? "Branch administrator" : role === "finance" ? "Finance" : "Teacher";
   await transporter.sendMail({
     from,
     to,

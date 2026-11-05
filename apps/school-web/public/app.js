@@ -248,7 +248,7 @@ function save() {
 const navItems = [
   ["dashboard", "◫", "Overview"],
   ["analytics", "▥", "Data Analytics"],
-  ["branches", "▦", "Branch comparison"],
+  ["branches", "▦", "Branches & comparison"],
   ["students", "♙", "Students"],
   ["admissions", "◇", "Admissions"],
   ["attendance", "✓", "Attendance"],
@@ -386,7 +386,7 @@ function render() {
   );
   $("#content").innerHTML = {
     dashboard,
-    branches: () => heading("Branch comparison", "Compare equivalent courses across your school outlets.") + '<div id="branch-page"></div>',
+    branches: () => heading("Manage branches", "Add school outlets, open their records and compare equivalent courses.") + '<div id="branch-page"></div>',
     analytics,
     students,
     admissions,
@@ -404,7 +404,7 @@ function render() {
     "platform-analytics": platformAnalyticsPage,
   }[view]();
   wire();
-  if (view === "branches") mountBranches($("#branch-page"), schoolApi);
+  if (view === "branches") mountBranches($("#branch-page"), schoolApi, activeSchool);
   if (view === "platform-analytics" && isPlatformOwner) loadPlatformAnalytics();
   if (view === "analytics" && schoolDataLive && role === "Administrator") loadAnalytics();
 }
@@ -664,6 +664,7 @@ async function schoolApi(path, options = {}) {
     headers: {
       "Content-Type": "application/json",
       Authorization: "Bearer " + accessToken,
+      "X-School-Id": activeSchool?.id || "",
       ...options.headers,
     },
   });
@@ -674,6 +675,7 @@ async function schoolApi(path, options = {}) {
       headers: {
         "Content-Type": "application/json",
         Authorization: "Bearer " + accessToken,
+      "X-School-Id": activeSchool?.id || "",
         ...options.headers,
       },
     });
@@ -2013,7 +2015,7 @@ function staff() {
       "Staff management",
       "Invite teachers and finance staff to this school workspace.",
     ) +
-    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>Invite a staff member</h2><span class="badge gray">Administrator only</span></div><form id="staff-form"><div class="form-grid"><div class="field"><label for="staff-name">Full name</label><input id="staff-name" name="fullName" maxlength="100" required></div><div class="field"><label for="staff-email">Email address</label><input id="staff-email" name="email" type="email" required></div><div class="field"><label for="staff-role">Role</label><select id="staff-role" name="role"><option value="teacher">Teacher</option><option value="finance">Finance</option></select></div></div><div class="form-actions"><button class="button">Send invitation</button><span class="status-text">Personal email addresses can be used.</span></div><div id="staff-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Staff access</h2><small>${schoolStaff.length} staff</small></div>${table(["Staff member", "Role", "Status", "Invited", "Actions"], schoolStaff.map((member) => `<tr><td><span class="student-name">${esc(member.full_name)}</span><span class="sub">${esc(member.email)}</span></td><td><select class="staff-role-select" data-id="${esc(member.id)}" aria-label="Role for ${esc(member.full_name)}"><option value="teacher" ${member.role === "teacher" ? "selected" : ""}>Teacher</option><option value="finance" ${member.role === "finance" ? "selected" : ""}>Finance</option></select></td><td><span class="badge ${member.invitation_status === "accepted" ? "" : "amber"}">${esc(member.invitation_status)}</span></td><td>${esc(new Date(member.invited_at).toLocaleDateString("en-GB"))}</td><td><div class="quick-actions">${member.invitation_status !== "accepted" ? `<button class="text-button resend-staff" data-id="${esc(member.id)}">Resend</button>` : ""}<button class="text-button revoke-staff" data-id="${esc(member.id)}" data-name="${esc(member.full_name)}">${member.invitation_status === "accepted" ? "Deactivate" : "Cancel"}</button></div></td></tr>`).join(""))}</section><div class="panel-heading"><div><h2>Teacher assignments</h2><p>Connect each teacher to the exact classes and subjects they teach.</p></div></div>${assignmentPanels || '<section class="panel"><p class="empty">Invite a teacher before creating assignments.</p></section>'}</div>`
+    `<div class="stack"><section class="panel"><div class="panel-heading"><h2>Invite a staff member</h2><span class="badge gray">Administrator only</span></div><form id="staff-form"><div class="form-grid"><div class="field"><label for="staff-name">Full name</label><input id="staff-name" name="fullName" maxlength="100" required></div><div class="field"><label for="staff-email">Email address</label><input id="staff-email" name="email" type="email" required></div><div class="field"><label for="staff-role">Role</label><select id="staff-role" name="role"><option value="teacher">Teacher</option><option value="finance">Finance</option></select></div></div><div class="form-actions"><button class="button">Send invitation</button><span class="status-text">Personal email addresses can be used.</span></div><div id="staff-error" class="error" role="alert"></div></form></section><section class="panel"><div class="panel-heading"><h2>Staff access</h2><small>${schoolStaff.length} staff</small></div>${table(["Staff member", "Role", "Status", "Invited", "Actions"], schoolStaff.map((member) => `<tr><td><span class="student-name">${esc(member.full_name)}</span><span class="sub">${esc(member.email)}</span></td><td><select class="staff-role-select" data-id="${esc(member.id)}" aria-label="Role for ${esc(member.full_name)}"><option value="administrator" ${member.role === "administrator" ? "selected" : ""} disabled>Branch administrator</option><option value="teacher" ${member.role === "teacher" ? "selected" : ""}>Teacher</option><option value="finance" ${member.role === "finance" ? "selected" : ""}>Finance</option></select></td><td><span class="badge ${member.invitation_status === "accepted" ? "" : "amber"}">${esc(member.invitation_status)}</span></td><td>${esc(new Date(member.invited_at).toLocaleDateString("en-GB"))}</td><td><div class="quick-actions">${member.invitation_status !== "accepted" ? `<button class="text-button resend-staff" data-id="${esc(member.id)}">Resend</button>` : ""}<button class="text-button revoke-staff" data-id="${esc(member.id)}" data-name="${esc(member.full_name)}">${member.invitation_status === "accepted" ? "Deactivate" : "Cancel"}</button></div></td></tr>`).join(""))}</section><div class="panel-heading"><div><h2>Teacher assignments</h2><p>Connect each teacher to the exact classes and subjects they teach.</p></div></div>${assignmentPanels || '<section class="panel"><p class="empty">Invite a teacher before creating assignments.</p></section>'}</div>`
   );
 }
 function gradingBandRow(band = { label: "", min: 0, passing: true }) {
@@ -4130,7 +4132,7 @@ async function showPortal(session) {
     email = session?.user?.email || "";
   accessToken = await authenticatedToken(true);
   const response = await fetch("/api/me", {
-    headers: { Authorization: "Bearer " + accessToken },
+    headers: { Authorization: "Bearer " + accessToken, "X-School-Id": new URLSearchParams(location.search).get("school") || "" },
   });
   const account = await response.json();
   if (!response.ok) throw Error(account.error || "Account access unavailable.");
@@ -4215,7 +4217,7 @@ async function initializeAuth() {
       if (!response.ok) throw Error(data.error || "Invitation unavailable.");
       $("#invitation-title").textContent = `Join ${data.invitation.name}`;
       $("#invitation-details").textContent = data.invitation.role
-        ? `Create your ${data.invitation.role === "finance" ? "Finance" : "Teacher"} account to join this school workspace.`
+        ? `Create your ${data.invitation.role === "administrator" ? "Branch administrator" : data.invitation.role === "finance" ? "Finance" : "Teacher"} account to join this school workspace.`
         : "Create your administrator account to activate this school workspace.";
       $("#invitation-name").value = data.invitation.administrator_name;
       $("#invitation-email").value = data.invitation.administrator_email;
@@ -4275,7 +4277,7 @@ async function acceptInvitation(token, session) {
     data = await response.json();
   if (!response.ok)
     throw Error(data.error || "Unable to activate this school.");
-  history.replaceState({}, "", location.pathname);
+  history.replaceState({}, "", location.pathname + "?school=" + encodeURIComponent(data.schoolId));
   await showPortal(session);
   toast(
     data.trialGranted

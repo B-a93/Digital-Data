@@ -168,8 +168,9 @@ async function requireSchoolContext(req) {
     `SELECT su.school_id,su.role,s.name FROM school_users su
      JOIN schools s ON s.id=su.school_id
      WHERE su.auth_user_id=$1 AND s.status='active'
+       AND ($2::text IS NULL OR s.id::text=$2)
      ORDER BY su.created_at LIMIT 1`,
-    [user.id],
+    [user.id, req.headers["x-school-id"] || null],
   );
   if (!result.rows[0])
     throw Object.assign(
@@ -228,6 +229,63 @@ async function recordAudit(
     console.error("[audit] write failed:", error.message);
   }
 }
+
+async function createSchoolBranch(req) {
+  const context = await requireSchoolContext(req);
+  if (isPlatformOwnerEmail(context.email)) throw Object.assign(new Error("Use your school leadership account."), {status:403});
+  requireRole(context, "administrator");
+  const data = await readJsonBody(req);
+  const fields = {};
+  for (const key of ["name","region","town","adminName","adminEmail","phone"]) fields[key] = String(data[key] || "").trim();
+  fields.adminEmail = fields.adminEmail.toLowerCase();
+  if (!fields.name || !fields.region || !fields.town || !fields.adminName ||
+      Object.values(fields).some(v => v.length > 150) || !/^\S+@\S+\.\S+$/.test(fields.adminEmail))
+    throw Object.assign(new Error("Enter the branch name, region, town and valid administrator details."), {status:400});
+  const invite = invitation();
+  const record = await transaction(async client => {
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('school-branch-setup'))");
+    const parent = (await client.query(`SELECT s.* FROM schools s JOIN school_users u ON u.school_id=s.id
+      WHERE s.id=$1 AND u.auth_user_id=$2 AND u.role IN ('owner','administrator') AND s.status='active' FOR SHARE OF s,u`,
+      [context.school_id,context.id])).rows[0];
+    if (!parent) throw Object.assign(new Error("School leadership access required."), {status:403});
+    const membership = (await client.query(`SELECT g.* FROM school_branch_members m JOIN school_branch_groups g ON g.id=m.group_id
+      WHERE m.school_id=$1`,[parent.id])).rows[0];
+    if (membership && membership.owner_school_id !== parent.id)
+      throw Object.assign(new Error("Open the main school to add branches. Outlet administrators cannot create branches."), {status:403});
+    const group = membership || (await client.query(`INSERT INTO school_branch_groups(name,owner_school_id) VALUES($1,$2)
+      ON CONFLICT(owner_school_id) DO UPDATE SET name=school_branch_groups.name RETURNING *`,[parent.name,parent.id])).rows[0];
+    const duplicate = await client.query(`SELECT s.id FROM school_branch_members m JOIN schools s ON s.id=m.school_id
+      WHERE m.group_id=$1 AND lower(s.name)=lower($2)`,[group.id,fields.name]);
+    if (duplicate.rows.length || fields.name.toLowerCase() === parent.name.toLowerCase())
+      throw Object.assign(new Error("A branch with this name already exists. Open it instead of creating it again."), {status:409});
+    const count = await client.query("SELECT count(*)::integer AS total FROM school_branch_members WHERE group_id=$1",[group.id]);
+    if (Number(count.rows[0].total) >= 50) throw Object.assign(new Error("This organisation has reached the 50 branch limit."), {status:400});
+    const branch = (await client.query(`INSERT INTO schools(name,slug,school_type,region,district,contact_name,contact_email,contact_phone,
+      status,onboarding_mode,current_academic_year,current_term,pass_mark,grade_scale)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,'active','branch',$9,$10,$11,$12) RETURNING id,name`,
+      [fields.name,selfServiceSlug(fields.name),parent.school_type,fields.region,fields.town,fields.adminName,fields.adminEmail,fields.phone,
+       parent.current_academic_year,parent.current_term,parent.pass_mark,parent.grade_scale])).rows[0];
+    await client.query(`INSERT INTO school_branch_members(school_id,group_id) VALUES($1,$3),($2,$3)
+      ON CONFLICT(school_id) DO NOTHING`,[parent.id,branch.id,group.id]);
+    await client.query("INSERT INTO school_users(school_id,auth_user_id,role) VALUES($1,$2,'owner')",[branch.id,context.id]);
+    const staff = (await client.query(`INSERT INTO staff_invitations(school_id,full_name,email,role,invitation_status,invitation_token_hash,invitation_expires_at)
+      VALUES($1,$2,$3,'administrator','sent',$4,$5) RETURNING *`,
+      [branch.id,fields.adminName,fields.adminEmail,invite.hash,invite.expiresAt])).rows[0];
+    return {...staff,school_name:branch.name,branchId:branch.id};
+  });
+  let invitationSent = true;
+  try { await emailStaffInvitation(record,invite); }
+  catch(error) {
+    invitationSent = false;
+    console.error("[email] branch administrator invitation failed:",error.message);
+    await query("UPDATE staff_invitations SET invitation_status='email_failed' WHERE id=$1",[record.id]);
+  }
+  await recordAudit(context,"branch.created","school",record.branchId,{name:record.school_name,invitationSent});
+  return {schoolId:record.branchId,invitationSent,message:invitationSent
+    ? "Branch created and linked. The administrator invitation has been sent."
+    : "Branch created and linked, but the invitation email failed. Open the branch and use Staff access to resend it. Do not create the branch again."};
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const requestUrl = new URL(req.url, "http://localhost");
@@ -235,6 +293,10 @@ const server = http.createServer(async (req, res) => {
     if (pathname === "/api/auth" || pathname.startsWith("/api/auth/")) {
       await proxyAuth(req, res, pathname, requestUrl.search);
       return;
+    }
+    if (pathname === "/api/branches/create") {
+      if (req.method !== "POST") { json(res,405,{error:"Method not allowed"}); return; }
+      json(res,201,await createSchoolBranch(req)); return;
     }
     if (pathname === "/api/branches" || pathname === "/api/branches/setup") {
       json(res,200,await branchRequest(req,requestUrl,readJsonBody));
@@ -527,8 +589,9 @@ const server = http.createServer(async (req, res) => {
                 s.trial_status,s.trial_started_at,s.trial_ends_at,s.address,s.contact_email,s.contact_phone,s.principal_name,s.logo_data_url
          FROM school_users su JOIN schools s ON s.id=su.school_id
          WHERE su.auth_user_id=$1 AND s.status='active'
+       AND ($2::text IS NULL OR s.id::text=$2)
          ORDER BY su.created_at LIMIT 1`,
-        [user.id],
+        [user.id, req.headers["x-school-id"] || null],
       );
       if (!membership.rows[0]) {
         json(res, 403, {
@@ -1311,7 +1374,7 @@ const server = http.createServer(async (req, res) => {
           ).rows[0];
           if (updated?.auth_user_id)
             await client.query(
-              `UPDATE school_users SET role=$3 WHERE school_id=$1 AND auth_user_id=$2`,
+              `UPDATE school_users SET role=$3 WHERE school_id=$1 AND auth_user_id=$2 AND role<>\'owner\'`,
               [context.school_id, updated.auth_user_id, staffRole],
             );
           return updated;
@@ -3417,7 +3480,7 @@ const server = http.createServer(async (req, res) => {
             );
           await client.query(
             `INSERT INTO school_users(school_id,auth_user_id,role) VALUES($1,$2,$3)
-             ON CONFLICT(school_id,auth_user_id) DO UPDATE SET role=EXCLUDED.role`,
+             ON CONFLICT(school_id,auth_user_id) DO UPDATE SET role=CASE WHEN school_users.role='owner' THEN school_users.role ELSE EXCLUDED.role END`,
             [
               found.school_id,
               user.id,

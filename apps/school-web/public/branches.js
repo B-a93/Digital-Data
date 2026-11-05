@@ -4,7 +4,7 @@ const money = value => `D${(Number(value || 0)/100).toLocaleString('en-GB',{mini
 function table(headers, rows) {
   return `<div class="table-wrap"><table><thead><tr>${headers.map(h=>`<th scope="col">${escape(h)}</th>`).join('')}</tr></thead><tbody>${rows || `<tr><td colspan="${headers.length}">No matching records yet.</td></tr>`}</tbody></table></div>`;
 }
-export async function mountBranches(host, api) {
+export async function mountBranches(host, api, currentSchool) {
   host.textContent = 'Loading branches…';
   try {
     const data = await api('/api/branches');
@@ -13,9 +13,21 @@ export async function mountBranches(host, api) {
     const ownerGroups = data.groups.filter(g=>g.canCompare);
     const branchName = id => data.branches.find(b=>b.id===id)?.name || id;
     const schoolOptions = schools.map(s=>`<option value="${escape(s.id)}">${escape(s.name)}</option>`).join('');
-    host.innerHTML = `${schools.length ? `<section class="panel"><h2>Link school branches</h2><p>School owners and headmasters can link the outlets they administer. Administrators of the selected main school can compare the linked branches.</p><form id="branch-setup" class="stack"><label>Organisation name <input name="name" maxlength="120" required></label><label>Main school <select name="ownerSchoolId" required>${schoolOptions}</select></label><fieldset><legend>Branches to link</legend>${schools.map(s=>`<label style="display:block"><input type="checkbox" name="schoolIds" value="${escape(s.id)}"> ${escape(s.name)}</label>`).join('')}</fieldset><p class="note">Your main school is included automatically. Only schools where your account has administrator access are listed. Use your school leadership account with access to each outlet.</p><button class="button">Link selected branches</button></form></section>` : ''}
+    const currentGroup = data.groups.find(g => data.branches.some(b => b.id === currentSchool?.id && b.group_id === g.id));
+    const canCreate = currentSchool && (!currentGroup || currentGroup.ownerSchoolId === currentSchool.id);
+    host.innerHTML = `<section class="panel"><h2>Your school workspaces</h2><p>Currently open: <strong>${escape(currentSchool?.name || '')}</strong>. Open a workspace before entering or editing its students, attendance, results or payments.</p>${table(['School / branch','Open records'],schools.map(s=>`<tr><td>${escape(s.name)}</td><td><a href="/?school=${encodeURIComponent(s.id)}#overview">Open ${escape(s.name)}</a></td></tr>`).join(''))}</section>
+      ${canCreate ? `<section class="panel"><h2>Add branch</h2><p>Create an outlet under ${escape(currentSchool.name)}. It will be linked automatically, and its administrator will receive an email invitation.</p><form id="branch-create" class="form-grid">
+      <label>Branch name<input name="name" maxlength="150" required placeholder="Brusubi campus"></label>
+      <label>Region<input name="region" maxlength="150" required placeholder="West Coast Region"></label>
+      <label>Town / location<input name="town" maxlength="150" required placeholder="Brusubi"></label>
+      <label>Headmaster / administrator name<input name="adminName" maxlength="150" required></label>
+      <label>Administrator email<input type="email" name="adminEmail" maxlength="150" required></label>
+      <label>Contact phone<input type="tel" name="phone" maxlength="150"></label>
+      <p class="note">Each branch keeps separate records. The administrator manages this outlet; main-school leaders compare all linked branches. Creating an outlet does not start another free trial.</p>
+      <button class="button">Create branch &amp; invite administrator</button></form></section>` : '<section class="panel"><p>New outlets are added from the main school account. Your branch administrator access covers this outlet.</p></section>'}
+      ${schools.length ? `<section class="panel"><h2>Link school branches</h2><p>School owners and headmasters can link the outlets they administer. Administrators of the selected main school can compare the linked branches.</p><form id="branch-setup" class="stack"><label>Organisation name <input name="name" maxlength="120" required></label><label>Main school <select name="ownerSchoolId" required>${schoolOptions}</select></label><fieldset><legend>Branches to link</legend>${schools.map(s=>`<label style="display:block"><input type="checkbox" name="schoolIds" value="${escape(s.id)}"> ${escape(s.name)}</label>`).join('')}</fieldset><p class="note">Your main school is included automatically. Only schools where your account has administrator access are listed. Use your school leadership account with access to each outlet.</p><button class="button">Link selected branches</button></form></section>` : ''}
       <p id="branch-message" role="status"></p>
-      ${data.groups.length ? `<section class="panel"><h2>Your branch groups</h2>${data.groups.map(g=>`<p><strong>${escape(g.name)}</strong> · ${g.canCompare ? 'Overall comparison access' : 'Your branch records and explanations'}</p>`).join('')}</section>` : '<section class="panel"><p>Set up your branch group above using your school leadership account. At least two school workspaces must be connected to your account as an owner or administrator.</p></section>'}
+      ${data.groups.length ? `<section class="panel"><h2>Your branch groups</h2>${data.groups.map(g=>`<p><strong>${escape(g.name)}</strong> · ${g.canCompare ? 'Overall comparison access' : 'Your branch records and explanations'}</p>`).join('')}</section>` : '<section class="panel"><p>Use Add branch to create your first outlet. If your outlets already have workspaces, use Link school branches below.</p></section>'}
       ${ownerGroups.length ? `<section class="panel"><h2>Match a course assessment</h2><p>Select a published assessment and use the same course, level, component and assessment basis for equivalent assessments across branches. Components can be Practical, Theory, or a subject. The academic year and term are taken from the published result.</p><form id="branch-match" class="form-grid"><label>Published assessment <select name="assessmentId" required><option value="">Choose assessment</option>${data.assessments.filter(a=>data.branches.some(b=>b.id===a.school_id && ownerGroups.some(g=>g.id===b.group_id))).map(a=>`<option value="${escape(a.id)}">${escape(branchName(a.school_id))} / ${escape(a.class_name)} / ${escape(a.subject)} / ${escape(a.academic_year)} / ${escape(a.term)} / ${escape(new Date(a.published_at).toLocaleString())}</option>`).join('')}</select></label>${[['course','Course, e.g. Hairdressing'],['level','Level, e.g. Level 1'],['component','Component, e.g. Practical'],['basis','Shared assessment / rubric, e.g. Practical final v1']].map(([name,label])=>`<label>${label}<input name="${name}" required maxlength="120"></label>`).join('')}<label><input type="checkbox" required> I confirm these labels identify comparable assessments and grading standards.</label><button class="button">Save course match</button></form></section>` : ''}
       <section class="panel"><h2>Compare courses across branches</h2><div class="analytics-filter"><label>Course <select id="branch-course"><option value="">All courses</option>${[...new Set(data.rows.map(r=>r.course))].sort().map(v=>`<option>${escape(v)}</option>`).join('')}</select></label><label>Academic year <select id="branch-year"><option value="">All years</option>${[...new Set(data.rows.map(r=>r.academic_year))].sort().map(v=>`<option>${escape(v)}</option>`).join('')}</select></label><label>Term <select id="branch-term"><option value="">All terms</option>${[...new Set(data.rows.map(r=>r.term))].sort().map(v=>`<option>${escape(v)}</option>`).join('')}</select></label></div><p class="note">Results use the selected published assessment and its saved grading rules. Student counts, attendance and fees use the class’s current student membership. Historical class transfers can affect those contextual figures. Attendance includes present and late divided by recorded marks. Missing registers are excluded.</p><div id="branch-comparison-output"></div></section>`;
     const message = host.querySelector('#branch-message');
@@ -25,11 +37,18 @@ export async function mountBranches(host, api) {
       message.textContent = 'Saving…';
       try {
         const result = await api(path,{method:'POST',body:JSON.stringify(body)});
-        await mountBranches(host,api);
+        await mountBranches(host,api,currentSchool);
         const target = host.querySelector('#branch-message');
         if(target) target.textContent=result.message;
       } catch(error) {message.textContent=error.message;button.disabled=false;}
     }
+    const create = host.querySelector('#branch-create');
+    if(create) create.onsubmit = event => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(create));
+      if(!confirm('Create this branch and send its administrator an invitation?')) return;
+      save(create,'/api/branches/create',values);
+    };
     const setup = host.querySelector('#branch-setup');
     if(setup) setup.onsubmit = event => {
       event.preventDefault();
