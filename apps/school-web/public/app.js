@@ -267,7 +267,7 @@ const visibleNav = () =>
         ["platform", "◆", "School onboarding"],
         ["platform-billing", "◈", "Billing & subscriptions"],
         ["platform-analytics", "▥", "Platform Analytics"],
-        ...navItems.filter(([id]) => id !== "analytics"),
+        ...navItems.filter(([id]) => !["analytics", "branches"].includes(id)),
       ]
     : !schoolDataLive || role === "Administrator"
       ? navItems
@@ -404,7 +404,7 @@ function render() {
     "platform-analytics": platformAnalyticsPage,
   }[view]();
   wire();
-  if (view === "branches") mountBranches($("#branch-page"), platformApi, isPlatformOwner);
+  if (view === "branches") mountBranches($("#branch-page"), schoolApi);
   if (view === "platform-analytics" && isPlatformOwner) loadPlatformAnalytics();
   if (view === "analytics" && schoolDataLive && role === "Administrator") loadAnalytics();
 }

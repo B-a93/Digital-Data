@@ -4,18 +4,18 @@ const money = value => `D${(Number(value || 0)/100).toLocaleString('en-GB',{mini
 function table(headers, rows) {
   return `<div class="table-wrap"><table><thead><tr>${headers.map(h=>`<th scope="col">${escape(h)}</th>`).join('')}</tr></thead><tbody>${rows || `<tr><td colspan="${headers.length}">No matching records yet.</td></tr>`}</tbody></table></div>`;
 }
-export async function mountBranches(host, api, platform) {
+export async function mountBranches(host, api) {
   host.textContent = 'Loading branches…';
   try {
     const data = await api('/api/branches');
-    const schools = platform ? (await api('/api/platform/schools')).schools.filter(s=>s.status==='active') : [];
+    const schools = data.managedSchools || [];
     if (!host.isConnected) return;
     const ownerGroups = data.groups.filter(g=>g.canCompare);
     const branchName = id => data.branches.find(b=>b.id===id)?.name || id;
-    const schoolOptions = schools.map(s=>`<option value="${escape(s.id)}">${escape(s.name)} · ${escape(s.administrator_email || '')}</option>`).join('');
-    host.innerHTML = `${platform ? `<section class="panel"><h2>Link school branches</h2><p>The activated administrator of the overall owner school receives comparison access to every selected branch. Each branch administrator manages their existing school workspace.</p><form id="branch-setup" class="stack"><label>Organisation name <input name="name" maxlength="120" required></label><label>Overall owner school <select name="ownerSchoolId" required>${schoolOptions}</select></label><fieldset><legend>Branches to link</legend>${schools.map(s=>`<label style="display:block"><input type="checkbox" name="schoolIds" value="${escape(s.id)}"> ${escape(s.name)}</label>`).join('')}</fieldset><p class="note">The overall owner school is included automatically. Selecting its existing group adds branches to that group.</p><button class="button">Link selected branches</button></form></section>` : ''}
+    const schoolOptions = schools.map(s=>`<option value="${escape(s.id)}">${escape(s.name)}</option>`).join('');
+    host.innerHTML = `${schools.length ? `<section class="panel"><h2>Link school branches</h2><p>School owners and headmasters can link the outlets they administer. Administrators of the selected main school can compare the linked branches.</p><form id="branch-setup" class="stack"><label>Organisation name <input name="name" maxlength="120" required></label><label>Main school <select name="ownerSchoolId" required>${schoolOptions}</select></label><fieldset><legend>Branches to link</legend>${schools.map(s=>`<label style="display:block"><input type="checkbox" name="schoolIds" value="${escape(s.id)}"> ${escape(s.name)}</label>`).join('')}</fieldset><p class="note">Your main school is included automatically. Only schools where your account has administrator access are listed. Use your school leadership account with access to each outlet.</p><button class="button">Link selected branches</button></form></section>` : ''}
       <p id="branch-message" role="status"></p>
-      ${data.groups.length ? `<section class="panel"><h2>Your branch groups</h2>${data.groups.map(g=>`<p><strong>${escape(g.name)}</strong> · ${g.canCompare ? 'Overall comparison access' : 'Your branch records and explanations'}</p>`).join('')}</section>` : '<section class="panel"><p>No branch group is linked to this account. Ask the platform owner to link your school outlets and assign the overall owner.</p></section>'}
+      ${data.groups.length ? `<section class="panel"><h2>Your branch groups</h2>${data.groups.map(g=>`<p><strong>${escape(g.name)}</strong> · ${g.canCompare ? 'Overall comparison access' : 'Your branch records and explanations'}</p>`).join('')}</section>` : '<section class="panel"><p>Set up your branch group above using your school leadership account. At least two school workspaces must be connected to your account as an owner or administrator.</p></section>'}
       ${ownerGroups.length ? `<section class="panel"><h2>Match a course assessment</h2><p>Select a published assessment and use the same course, level, component and assessment basis for equivalent assessments across branches. Components can be Practical, Theory, or a subject. The academic year and term are taken from the published result.</p><form id="branch-match" class="form-grid"><label>Published assessment <select name="assessmentId" required><option value="">Choose assessment</option>${data.assessments.filter(a=>data.branches.some(b=>b.id===a.school_id && ownerGroups.some(g=>g.id===b.group_id))).map(a=>`<option value="${escape(a.id)}">${escape(branchName(a.school_id))} / ${escape(a.class_name)} / ${escape(a.subject)} / ${escape(a.academic_year)} / ${escape(a.term)} / ${escape(new Date(a.published_at).toLocaleString())}</option>`).join('')}</select></label>${[['course','Course, e.g. Hairdressing'],['level','Level, e.g. Level 1'],['component','Component, e.g. Practical'],['basis','Shared assessment / rubric, e.g. Practical final v1']].map(([name,label])=>`<label>${label}<input name="${name}" required maxlength="120"></label>`).join('')}<label><input type="checkbox" required> I confirm these labels identify comparable assessments and grading standards.</label><button class="button">Save course match</button></form></section>` : ''}
       <section class="panel"><h2>Compare courses across branches</h2><div class="analytics-filter"><label>Course <select id="branch-course"><option value="">All courses</option>${[...new Set(data.rows.map(r=>r.course))].sort().map(v=>`<option>${escape(v)}</option>`).join('')}</select></label><label>Academic year <select id="branch-year"><option value="">All years</option>${[...new Set(data.rows.map(r=>r.academic_year))].sort().map(v=>`<option>${escape(v)}</option>`).join('')}</select></label><label>Term <select id="branch-term"><option value="">All terms</option>${[...new Set(data.rows.map(r=>r.term))].sort().map(v=>`<option>${escape(v)}</option>`).join('')}</select></label></div><p class="note">Results use the selected published assessment and its saved grading rules. Student counts, attendance and fees use the class’s current student membership. Historical class transfers can affect those contextual figures. Attendance includes present and late divided by recorded marks. Missing registers are excluded.</p><div id="branch-comparison-output"></div></section>`;
     const message = host.querySelector('#branch-message');
@@ -25,7 +25,7 @@ export async function mountBranches(host, api, platform) {
       message.textContent = 'Saving…';
       try {
         const result = await api(path,{method:'POST',body:JSON.stringify(body)});
-        await mountBranches(host,api,platform);
+        await mountBranches(host,api);
         const target = host.querySelector('#branch-message');
         if(target) target.textContent=result.message;
       } catch(error) {message.textContent=error.message;button.disabled=false;}
@@ -34,7 +34,7 @@ export async function mountBranches(host, api, platform) {
     if(setup) setup.onsubmit = event => {
       event.preventDefault();
       const values = new FormData(setup);
-      if(!confirm('Give the activated administrator of the selected overall owner school comparison access to these branches?')) return;
+      if(!confirm('Give the owners and headmasters who administer your main school comparison access to these selected branches?')) return;
       save(setup,'/api/branches/setup',{...Object.fromEntries(values),schoolIds:values.getAll('schoolIds')});
     };
     const match = host.querySelector('#branch-match');

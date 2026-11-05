@@ -17,24 +17,27 @@ export function comparisonKey(row) {
 
 export async function branchRequest(req, url, readBody) {
   const user = await verifyAuthenticatedUser(req);
-  const platform = isPlatformOwnerEmail(user.email);
+  if (isPlatformOwnerEmail(user.email)) fail('Sign in with your school leadership account to manage branch comparisons.',403);
+  const memberships = await query(`SELECT u.school_id,s.name FROM school_users u JOIN schools s ON s.id=u.school_id
+    WHERE u.auth_user_id=$1 AND u.role IN ('owner','administrator') AND s.status='active'`,[user.id]);
+  const adminIds = memberships.rows.map(row => row.school_id);
+  if (!adminIds.length) fail('School owner or headmaster access required.',403);
   if (url.pathname === '/api/branches/setup') {
-    if (!platform) fail('Platform owner access required.',403);
     if (req.method !== 'POST') fail('Method not allowed',405);
     const data = await readBody(req);
     const name = label(data.name);
     const ids = [...new Set([data.ownerSchoolId,...(Array.isArray(data.schoolIds) ? data.schoolIds : [])])];
     if (ids.length < 2 || ids.length > 50 || ids.some(id => !/^[0-9a-f-]{36}$/.test(id || '')))
       fail('Select an overall owner school and between two and fifty branches.');
+    if (ids.some(id => !adminIds.includes(id))) fail('You must have school administrator access to every branch you link.',403);
     return transaction(async client => {
       // Serialize group membership changes, including competing group creation.
       await client.query("SELECT pg_advisory_xact_lock(hashtext('school-branch-setup'))");
-      const schools = await client.query("SELECT id FROM schools WHERE id=ANY($1::uuid[]) AND status='active'",[ids]);
-      if (schools.rows.length !== ids.length) fail('Every selected school must be active.');
-      const owner = await client.query(`SELECT o.auth_user_id FROM school_onboarding o
-        JOIN school_users u ON u.school_id=o.school_id AND u.auth_user_id=o.auth_user_id AND u.role='administrator'
-        WHERE o.school_id=$1 AND o.accepted_at IS NOT NULL`,[data.ownerSchoolId]);
-      if (!owner.rows.length) fail('The overall owner school must have an activated administrator account.');
+      const schools = await client.query(`SELECT s.id FROM schools s
+        JOIN school_users u ON u.school_id=s.id
+        WHERE s.id=ANY($1::uuid[]) AND s.status='active'
+          AND u.auth_user_id=$2 AND u.role IN ('owner','administrator') FOR SHARE OF s,u`,[ids,user.id]);
+      if (schools.rows.length !== ids.length) fail('Administrator access is required for each active branch.',403);
       const existing = await client.query('SELECT id FROM school_branch_groups WHERE owner_school_id=$1',[data.ownerSchoolId]);
       const groupId = existing.rows[0]?.id;
       const conflicts = await client.query('SELECT school_id,group_id FROM school_branch_members WHERE school_id=ANY($1::uuid[])',[ids]);
@@ -43,20 +46,15 @@ export async function branchRequest(req, url, readBody) {
         ON CONFLICT(owner_school_id) DO UPDATE SET name=EXCLUDED.name RETURNING id`,[name,data.ownerSchoolId]);
       for (const id of ids) await client.query(`INSERT INTO school_branch_members(school_id,group_id) VALUES($1,$2)
         ON CONFLICT(school_id) DO NOTHING`,[id,group.rows[0].id]);
-      return { message:'Branches linked. The activated administrator of the overall owner school can compare all linked branches.' };
+      return { message:'Branches linked. Owners and headmasters with administrator access to the main school can compare the linked branches.' };
     });
   }
-  const memberships = await query(`SELECT u.school_id FROM school_users u JOIN schools s ON s.id=u.school_id
-    WHERE u.auth_user_id=$1 AND u.role='administrator' AND s.status='active'`,[user.id]);
-  const adminIds = memberships.rows.map(row => row.school_id);
-  const groups = await query(`SELECT g.*,o.auth_user_id AS owner_user_id FROM school_branch_groups g
-    JOIN schools owner_school ON owner_school.id=g.owner_school_id AND owner_school.status='active'
-    JOIN school_onboarding o ON o.school_id=g.owner_school_id
-    WHERE $2::boolean OR (o.auth_user_id=$1 AND EXISTS(SELECT 1 FROM school_users u
-      WHERE u.school_id=g.owner_school_id AND u.auth_user_id=$1 AND u.role='administrator'))
-      OR EXISTS(SELECT 1 FROM school_branch_members m WHERE m.group_id=g.id AND m.school_id=ANY($3::uuid[]))`,[user.id,platform,adminIds]);
+  const groups = await query(`SELECT g.* FROM school_branch_groups g
+    JOIN schools main_school ON main_school.id=g.owner_school_id AND main_school.status='active'
+    WHERE g.owner_school_id=ANY($1::uuid[])
+      OR EXISTS(SELECT 1 FROM school_branch_members m WHERE m.group_id=g.id AND m.school_id=ANY($1::uuid[]))`,[adminIds]);
   const allowed = groups.rows;
-  const ownerGroups = allowed.filter(g => platform || (g.owner_user_id === user.id && adminIds.includes(g.owner_school_id))).map(g => g.id);
+  const ownerGroups = allowed.filter(g => adminIds.includes(g.owner_school_id)).map(g => g.id);
   const groupIds = allowed.map(g => g.id);
   const branches = await query(`SELECT m.group_id,s.id,s.name FROM school_branch_members m JOIN schools s ON s.id=m.school_id
     WHERE m.group_id=ANY($1::uuid[]) AND s.status='active'
@@ -73,7 +71,7 @@ export async function branchRequest(req, url, readBody) {
       if (!result.rows.length) fail('Comparison not found.',404);
       return {message:'Branch explanation saved.'};
     }
-    if (!ownerGroups.includes(branch.group_id)) fail('Only the overall owner can match assessments.',403);
+    if (!ownerGroups.includes(branch.group_id)) fail('Only owners and headmasters administering the main school can match assessments.',403);
     const assessment = await query(`SELECT id FROM assessments WHERE id=$1 AND school_id=$2 AND published_at IS NOT NULL`,[data.assessmentId,branch.id]);
     if (!assessment.rows.length) fail('Choose a published assessment from this branch.');
     await query(`INSERT INTO school_branch_comparisons(group_id,school_id,assessment_id,course,level,component,basis)
@@ -135,5 +133,5 @@ export async function branchRequest(req, url, readBody) {
       attendanceRate:Number(metrics.recorded) ? 100*Number(metrics.attended)/Number(metrics.recorded) : null,
       comparisonKey:comparisonKey(match)});
   }
-  return {groups:allowed.map(g => ({id:g.id,name:g.name,canCompare:ownerGroups.includes(g.id)})),branches:branches.rows,assessments:assessments.rows,rows};
+  return {managedSchools:memberships.rows.map(s => ({id:s.school_id,name:s.name})),groups:allowed.map(g => ({id:g.id,name:g.name,canCompare:ownerGroups.includes(g.id)})),branches:branches.rows,assessments:assessments.rows,rows};
 }
