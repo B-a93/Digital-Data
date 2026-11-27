@@ -3513,7 +3513,7 @@ const server = http.createServer(async (req, res) => {
               `UPDATE schools SET status='active',
                        trial_status=CASE WHEN $2 THEN 'active' ELSE trial_status END,
                        trial_started_at=CASE WHEN $2 THEN now() ELSE trial_started_at END,
-                       trial_ends_at=CASE WHEN $2 THEN now() + interval '1 month' ELSE trial_ends_at END,
+                       trial_ends_at=CASE WHEN $2 THEN now() + interval '3 months' ELSE trial_ends_at END,
                        updated_at=now()
                WHERE id=$1`,
               [found.school_id, trialGranted],
