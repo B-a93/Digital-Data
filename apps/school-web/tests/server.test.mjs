@@ -222,7 +222,7 @@ test('self-onboarding creates an invited workspace and starts trials only after 
  assert.match(server,/status,onboarding_mode,trial_requested/);
  assert.match(server,/pg_advisory_xact_lock\(20261002\)/);
  assert.match(server,/trialCount < 10/);
- assert.match(server,/trial_ends_at=CASE WHEN \$2 THEN now\(\) \+ interval '1 month'/);
+ assert.match(server,/trial_ends_at=CASE WHEN \$2 THEN now\(\) \+ interval '3 months'/);
  assert.match(schema,/trial_ends_at timestamptz/);
 });
 test('student admissions remain pending until a school administrator approves them',async()=>{
